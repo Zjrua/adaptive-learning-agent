@@ -1,0 +1,31 @@
+% !TEX TS-program = xelatex
+% !TEX encoding = UTF-8 Unicode
+% !Mode:: "TeX:UTF-8"
+
+\documentclass{resume}
+\usepackage{stys/zh_CN-Adobefonts_external} % Simplified Chinese Support using external fonts (./fonts/zh_CN-Adobe/)
+% \usepackage{stys/NotoSansSC_external}
+% \usepackage{stys/NotoSerifCJKsc_external}
+% \usepackage{stys/zh_CN-Adobefonts_internal} % Simplified Chinese Support using system fonts
+\usepackage{stys/linespacing_fix} % disable extra space before next section
+\usepackage{bookmark}
+\usepackage{cite}
+% \usepackage{graphicx} % for header_with_photo. avatar
+% \usepackage{tabularray} % for header_with_photo
+
+\begin{document}
+\pagenumbering{gobble} % suppress displaying page number
+
+\settitlelinestyle{default} % partialbg, fullbg
+% \settitlelinestyle{partialbg}
+% \settitlelinestyle{fullbg}
+
+% \input{texs/header_with_photo} % uncomment line #13 #14!
+\input{texs/header}
+\input{texs/sections}
+
+%% Reference
+% \newpage
+% \bibliographystyle{cites/IEEETran}
+% \bibliography{cites/mycite}
+\end{document}

@@ -1,0 +1,157 @@
+%-------------------------
+% Resume in LaTeX
+% Author : Sourabh Bajaj (modified for Zhang Junrui with HIT logo)
+%-------------------------
+
+\documentclass[letterpaper,11pt]{article}
+
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\input{glyphtounicode}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+\pdfgentounicode=1
+
+% Custom commands
+\newcommand{\resumeItem}[2]{
+  \item\small{
+    \textbf{#1}{: #2 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-1pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small #3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-5pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small #1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-5pt}
+}
+
+\newcommand{\resumeItemPlain}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubItem}[2]{\resumeItem{#1}{#2}\vspace{-4pt}}
+
+\renewcommand{\labelitemii}{$\circ$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=*]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+\begin{document}
+
+%----------HEADING-----------------
+\begin{center}
+\begin{tabular*}{\textwidth}{l@{\extracolsep{\fill}}r}
+  \raisebox{-0.5\height}{\includegraphics[width=1.2cm]{hit-logo.png}} &
+  \begin{tabular}[b]{r}
+    \\[-12pt]
+    \textbf{\Large Junrui Zhang} \\[2pt]
+    \href{mailto:your.email@example.com}{your.email@example.com} $\cdot$ 
+    \href{tel:+86-xxx-xxxx-xxxx}{+86-xxx-xxxx-xxxx} \\[2pt]
+    \href{https://github.com/Zjrua}{GitHub/Zjrua}
+  \end{tabular}
+\end{tabular*}
+\end{center}
+\vspace{-8pt}
+
+%-----------EDUCATION-----------------
+\section{Education}
+  \resumeSubHeadingListStart
+    \resumeSubheading
+      {Harbin Institute of Technology}{Harbin, China}
+      {M.S. in Applied Statistics}{Sep 2025 -- Jun 2028}
+    \resumeSubheading
+      {Harbin Institute of Technology}{Harbin, China}
+      {B.S. in Information and Computing Science}{Sep 2020 -- Jun 2024}
+  \resumeSubHeadingListEnd
+
+%-----------RESEARCH-----------------
+\section{Research}
+  \resumeSubHeadingListStart
+    \resumeSubItem{Physical Data Analysis Research}
+      {Lead investigator on statistical modeling of physical fitness data. Manuscript submitted to \textit{Sports Science} (体育科学).}
+  \resumeSubHeadingListEnd
+
+%-----------PROJECTS-----------------
+\section{Projects}
+  \resumeSubHeadingListStart
+    \resumeSubItem{2026 National Statistical Modeling Competition (Team TJJM20260414180979)}
+      {Graduate division. Applied statistical modeling and data analysis techniques. Python, PyTorch.}
+    \resumeSubItem{2023 CUMCM — Heilongjiang Second Prize}
+      {National Undergraduate Mathematical Contest in Modeling. Provincial second prize.}
+    \resumeSubItem{2022 MCM/ICM — Meritorious Winner}
+      {Interdisciplinary Contest in Modeling. Top 7\% globally.}
+  \resumeSubHeadingListEnd
+
+%-----------AWARDS-----------------
+\section{Honors \& Awards}
+  \resumeSubHeadingListStart
+    \resumeSubItem{MCM/ICM Meritorious Winner (Top 7\%)}{2022}
+    \resumeSubItem{CUMCM Heilongjiang Second Prize}{2023}
+    \resumeSubItem{National Statistical Modeling Competition (Graduate Division)}{2026}
+  \resumeSubHeadingListEnd
+
+%-----------SKILLS-----------------
+\section{Skills}
+  \resumeSubHeadingListStart
+    \item{
+      \textbf{Programming}{: Python, C/C++, SQL, LaTeX}
+      \hfill
+      \textbf{Frameworks}{: PyTorch, pandas, NumPy, scikit-learn}
+    }
+    \item{
+      \textbf{Tools}{: Git, Linux, Jupyter, VS Code}
+      \hfill
+      \textbf{Languages}{: Chinese (Native), English (Fluent)}
+    }
+  \resumeSubHeadingListEnd
+
+%-----------ADDITIONAL-----------------
+\section{Additional}
+  \resumeSubHeadingListStart
+    \resumeSubItem{High School}
+      {Participated in National Olympiad in Informatics (NOI).}
+    \resumeSubItem{Affiliation}
+      {Active member of CPC training program (入党积极分子).}
+  \resumeSubHeadingListEnd
+
+\end{document}
