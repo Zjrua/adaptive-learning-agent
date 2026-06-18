@@ -1,0 +1,42 @@
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.fls
+*.fdb_latexmk
+*.synctex.gz
+*.toc
+*.bbl
+*.blg
+*.pdfsync
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Fonts (too large for git, download from original repos)
+resume/templates/hijiangtao/fonts/
+resume/templates/luooofan/fonts/
+resume/templates/deedy/OpenFonts/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# Large model/data files
+*.bin
+*.pt
+*.pth
+*.h5
+*.hdf5
+*.ckpt
+*.safetensors
+datasets/
