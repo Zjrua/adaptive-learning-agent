@@ -34,6 +34,16 @@ resume/build/*.png
 # Skill-tree generated artifacts (regenerate with: python skill-tree/tools/render.py)
 skill-tree/dist/
 
+# Frontend (React/Vite)
+skill-tree/frontend/node_modules/
+skill-tree/frontend/dist/
+skill-tree/frontend/tsconfig.tsbuildinfo
+skill-tree/frontend/*.tsbuildinfo
+
+# Backend (FastAPI)
+skill-tree/backend/__pycache__/
+skill-tree/backend/*.pyc
+
 # Python cache
 __pycache__/
 *.pyc
