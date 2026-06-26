@@ -1,0 +1,28 @@
+services:
+  backend:
+    build: ./backend
+    container_name: skilltree-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      # data 目录：后端读写（勾选进度落盘到 JSON）
+      - ./data:/app/data
+      # resume / projects：只读挂载（果实展示、节点 resource 链接、PDF 打开）
+      - ../resume:/app/resume:ro
+      - ../projects:/app/projects:ro
+    environment:
+      - PYTHONUNBUFFERED=1
+      - DATA_DIR=/app/data
+      - RESUME_DIR=/app/resume
+      - PROJECTS_DIR=/app/projects
+
+  frontend:
+    build: ./frontend
+    container_name: skilltree-frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules

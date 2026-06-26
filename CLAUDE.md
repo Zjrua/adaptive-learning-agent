@@ -14,7 +14,7 @@ This file provides context for AI coding agents (Claude, Copilot, etc.) working 
 
 ## Repository Structure
 
-- `skill-tree/` — **主体**。`data/*.json` 唯一数据源（方向节点 + 成就）+ `tools/render.py` 生成器 → 所有方向合并成 `dist/skill-tree.html`(单画布知识图谱 DAG) + `dist/PROGRESS.md`(进度表)。详见 `skill-tree/README.md`
+- `skill-tree/` — **主体**。React(Frontend) + FastAPI(Backend) 全栈：`data/*.json` 数据源 → `/api/graph` 合并去重布局 → 单画布 DAG。`backend/`(layout/progress 纯函数 + API) + `frontend/`(React SPA) + `docker-compose.yml`。详见 `skill-tree/README.md`
 - `resume/templates/` — 7套 LaTeX 简历模板（sb2nov, jakegut, billryan, hijiangtao, luooofan, deedy, awesome-cv）
 - `resume/shared/` — **模块化素材层**（单一数据源，所有 profile 共用，见下文）
 - `resume/profiles/` — **岗位 profile**（每个岗位一个目录，组装+裁剪素材）
@@ -26,59 +26,60 @@ This file provides context for AI coding agents (Claude, Copilot, etc.) working 
 
 ### Skill Tree（主体）
 
-技能树系统沿用简历的"单一数据源"理念：**JSON 是唯一数据源，生成器产出 HTML + Markdown**。
+React + FastAPI 全栈应用。**JSON 是唯一数据源**，前端状态驱动渲染，彻底告别手写 DOM 的时序/错位 bug。
 
-#### 前端架构（侧栏单页应用 SPA）
-`skill-tree.html` 是侧栏导航的单页应用，4 个板块靠 URL hash 路由切换（`#tree`/`#profile`/`#templates`/`#fruit`）：
-- 🌳 技能树：单画布 DAG + 进度仪表盘 + 成就花田
-- 👤 个人信息：读 `data/profile.json` 渲染（姓名/教育/技能/经历/竞赛）
-- 📄 简历模板：扫描 `resume/templates/` 目录（render.py: scan_templates + TEMPLATE_META）
-- 🍎 果实展示：扫描 `resume/profiles/` + `resume/build/*.pdf`（render.py: scan_fruits），卡片「打开 PDF」
-- 侧栏底部进度环 = 整体任务完成率
+#### 启动
+```bash
+cd skill-tree && docker-compose up     # 前端 :5173  后端 :8000
+# 或开发：后端 uvicorn main:app --reload  +  前端 npm run dev（vite 代理 /api→:8000）
+```
 
-#### 数据流
+#### 架构
+- `backend/` FastAPI：`main.py`(API) + `layout.py`(DAG 布局纯函数) + `progress.py`(掌握度/成就)。读写 `data/*.json`，勾选落盘。
+- `frontend/` React+TS(Vite)：`App.tsx`(侧栏 SPA, hash 路由) + `SkillTree.tsx`(DAG 画布) + `NodeCard.tsx`(节点/知识点/验收) + `panels/`(其余板块)
+- `data/` 数据源；`tools/render.py` 旧单文件生成器，保留用于生成 `dist/PROGRESS.md`(GitHub 预览)
+
+#### 数据流（状态驱动，解决历史 bug）
 ```
-skill-tree/data/*.json  (✏️ 只改这里：方向节点 + profile.json + 成就)
-        │  python skill-tree/tools/render.py
-        ▼  合并所有方向 → 单张知识图谱 + 扫描 resume/
-skill-tree/dist/skill-tree.html  (侧栏 SPA, 浏览器打开)
-skill-tree/dist/PROGRESS.md      (进度表, GitHub/Obsidian 可读)
+data/*.json ──GET /api/graph──▶ React state ──▶ 节点+SVG连线 同源于 useMemo(layout)
+     ▲                              │
+     └──PATCH /api/task(写盘)◀──勾选──┘  → 重渲染：进度/删除线/连线一起更新，不错位
 ```
+**连线不错位的根因**：节点位置和 SVG 连线都从同一份 `useMemo(computeLayout)` 派生；展开避让改变 layout，两者同步。
+
+#### 四板块（侧栏 hash 路由 `#tree`/`#profile`/`#templates`/`#fruit`）
+- 🌳 技能树：DAG + 仪表盘 + 成就花田
+- 👤 个人信息：读 `data/profile.json`
+- 📄 简历模板：扫描 `resume/templates/`（`TEMPLATE_META` 在 main.py）
+- 🍎 果实展示：扫描 `resume/profiles/` + `resume/build/*.pdf`，「打开 PDF」走 `/resume/build/<id>.pdf`
 
 #### 数据格式
-- 节点(node)：`{id, name, category, status, depends_on, tasks[]}`，进度 = 已完成 tasks/总数，自动算
-- `tasks[]` 每项 `{id, title, done, resource}`，`resource` 用相对路径（相对 `skill-tree/`）链论文或 `projects/` 源码
-- **跨方向共享**：同名 node id（`python`/`pytorch`/`ml_basics`/`fm`/`deepfm`）在多方向 JSON 里用同 id，渲染时自动去重合并成一个节点
-- `depends_on` 可填节点 id 或分支 id（如 `"sequence"` → 自动解析成该分支末端节点）
-- 成就(achievements.json)：`{id, icon, name, desc, tier, condition}`，condition `type` 见 skill-tree/README.md
-- **个人信息(profile.json)**：`{name, contact, education, skills, experience, awards, ...}`。⚠️ 与 `resume/shared/*.tex` 是同一信息的两份表达，改一处必须同步另一处
+- 节点(node)：`{id, name, category, status, depends_on, tasks[]}`
+- **知识点与验收**：学习任务可带 `verify[]`。有验收→勾完验收才算掌握（学习任务勾选框置灰=清单）；无验收→勾学习任务即掌握。节点 done = 所有知识点掌握
+- `resource` 相对路径链论文或 `projects/` 源码
+- **跨方向共享**：同名 node id 在多方向 JSON 用同 id，后端 merge_nodes 自动去重
+- `depends_on` 可填节点 id 或分支 id（layout.py normalize_deps 解析成分支末端节点）
+- **profile.json**：⚠️ 与 `resume/shared/*.tex` 是同一信息两份表达，改一处同步另一处
 
-#### 布局算法（render.py: compute_dag_layout）
-- 所有方向的节点合并去重 → 一张 DAG
-- 深度 = 从根（无依赖）出发的最长路径长度，迭代松弛算
-- **基础（depth 0）在画布顶部**，向下逐层生长
-- 同 depth 内按 (方向 order, 分支顺序) 排序聚拢，减少连线交叉
-- 连线坐标在 Python 算定（节点绝对定位 left/top），前端 JS 只负责画贝塞尔曲线（从上往下）+ 进度高亮
+#### 布局算法（backend/layout.py: compute_layout）
+- 合并去重 → 拓扑分层 → 深度=从根出发最长路径 → **基础(depth 0)在顶部**向下生长
+- 常量 NODE_W/ROW_GAP 等在 layout.py 顶部（前端 SkillTree.tsx 必须与之对应）
 
 #### 关键约定
-- **改技能/成就/个人信息只动 `data/*.json`**，然后跑 `python skill-tree/tools/render.py`，不碰 render.py 除非加新功能
-- **`dist/` 是生成产物，已 gitignore**，不要手动改、不要提交
-- **render.py 零依赖纯标准库**；新增方向只需往 `data/` 丢 JSON（目录驱动自动发现，无需改代码）
-- **不填虚构技能**：初始只放真实方向，节点 status 默认 `locked`，由 owner 逐步推进
-- **节点的 resource 用相对路径引用 `projects/` 和 `resume/`**，不移动这些目录
-- **模板元数据**在 render.py 的 `TEMPLATE_META` dict（id = templates/ 目录名），加新模板在这里登记
-- **布局常量**（NODE_W/ROW_GAP 等）在 render.py 顶部，调间距改这里
+- **改技能/成就/个人信息只动 `data/*.json`**，后端实时读写，无需重新生成
+- **`frontend/dist`、`backend/__pycache__` 是产物**，不提交
+- **新增方向**：往 `data/` 丢 JSON（目录驱动自动发现）
+- **不填虚构技能**：节点 status 默认 locked，由 owner 推进
+- **resource 用相对路径引用 `projects/`/`resume/`**，不移动这些目录
+- 改前端组件后 `npm run build` 重新构建（开发模式热更新免此步）
 
 #### 常见任务
-```bash
-# 重新生成 SPA（改 data/ 或 resume/ 内容后必跑）
-python skill-tree/tools/render.py
-```
-- 加节点：在 `data/<方向>.json` 某分支的 `nodes` 加一项 → render.py
-- 加新方向：复制现有方向 JSON → 改内容 → render.py（自动发现，无需登记）
-- 加成就：在 `data/achievements.json` 加一项 → render.py
-- 改个人信息：改 `data/profile.json`（⚠️ 同步改 `resume/shared/*.tex`）→ render.py
-- 新增简历 PDF：`build_profile.cmd` 编译后，scan_fruits 自动发现，render.py 即可在果实板块打开
+- 加节点/验收：改 `data/<方向>.json`（浏览器刷新即生效，无需重建）
+- 加新方向：复制现有方向 JSON → 改内容 → 刷新（自动发现）
+- 加成就：改 `data/achievements.json` → 刷新
+- 改个人信息：改 `data/profile.json`（⚠️ 同步 `resume/shared/*.tex`）→ 刷新
+- 新增 PDF：`build_profile.cmd` 编译后，果实板块自动发现
+- 更新 GitHub 进度表：`python skill-tree/tools/render.py`（生成 PROGRESS.md）
 
 ### LaTeX Resume
 

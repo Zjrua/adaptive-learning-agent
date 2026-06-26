@@ -50,35 +50,51 @@ def load_all():
 
 # ─────────────────────────── 进度计算 ───────────────────────────
 def _all_tasks(node):
-    """学习任务 + 验收任务（验收是点灯 done 的必要条件，计入进度）。"""
-    return list(node.get("tasks", [])) + list(node.get("verify", []))
+    """学习任务 + 它们各自的 verify 子任务（仅用于渲染勾选框，不用于掌握度统计）。"""
+    out = []
+    for t in node.get("tasks", []):
+        out.append(t)
+        out.extend(t.get("verify", []))
+    out.extend(node.get("verify", []))   # 兼容旧数据
+    return out
+
+
+def node_mastery(node):
+    """以「知识点」为单位算掌握度：一个学习任务 = 一个知识点。
+    - 有 verify 的知识点：所有验收 done 才算掌握（学习任务勾选不计）
+    - 无 verify 的知识点：学习任务 done 即掌握
+    返回 (mastered数, 知识点总数, pct)。
+    """
+    points = node.get("tasks", [])
+    total = len(points)
+    mastered = 0
+    for tk in points:
+        ver = tk.get("verify", [])
+        if ver:
+            if all(v.get("done") for v in ver):
+                mastered += 1
+        else:
+            if tk.get("done"):
+                mastered += 1
+    pct = 100 if total == 0 else round(mastered / total * 100)
+    return mastered, total, pct
 
 
 def node_progress(node):
-    tasks = _all_tasks(node)
-    total = len(tasks)
-    done = sum(1 for t in tasks if t.get("done"))
-    pct = 100 if total == 0 else round(done / total * 100)
-    return done, total, pct
-
-
-def node_learn_verify(node):
-    """分别返回 (学习 done/total, 验收 done/total)，用于节点显示「学习 x/y · 验收 a/b」。"""
-    learn = node.get("tasks", [])
-    verify = node.get("verify", [])
-    ld = sum(1 for t in learn if t.get("done"))
-    vd = sum(1 for t in verify if t.get("done"))
-    return ld, len(learn), vd, len(verify)
+    """节点进度 = 掌握的知识点数（与点灯逻辑一致）。"""
+    m, t, pct = node_mastery(node)
+    return m, t, pct
 
 
 def node_status(node):
-    done, total, _ = node_progress(node)
-    # 进度满(含验收)→ done；否则看是否有进展
-    if total > 0 and done == total:
+    mastered, total, _ = node_progress(node)
+    # 所有知识点都掌握 → done
+    if total > 0 and mastered == total:
         return "done"
     if total == 0 and node.get("status") == "done":
         return "done"   # 无任务节点：尊重显式 status
-    if done > 0 or node.get("status") in ("learning", "done"):
+    # 有任何勾选进展(学习清单或验收) → learning
+    if any(tk.get("done") for tk in _all_tasks(node)) or node.get("status") in ("learning", "done"):
         return "learning"
     return "locked"
 
@@ -541,7 +557,7 @@ section.block{margin-top:54px}
 .depth-axis span{flex:1;display:flex;align-items:center;font-size:9px;color:var(--fg-faint);writing-mode:vertical-rl;letter-spacing:.1em;opacity:.5}
 
 /* ───────── 节点·果实（绝对定位）───────── */
-.node{position:absolute;width:168px;background:linear-gradient(165deg,var(--moss-2),var(--moss));border:1.5px solid var(--line);border-radius:18px;padding:14px 14px 12px;cursor:pointer;transition:.3s cubic-bezier(.2,.8,.2,1),left .4s,top .4s;text-align:left;font-family:inherit;color:inherit;z-index:2}
+.node{position:absolute;width:168px;background:linear-gradient(165deg,var(--moss-2),var(--moss));border:1.5px solid var(--line);border-radius:18px;padding:14px 14px 12px;cursor:pointer;transition:transform .3s cubic-bezier(.2,.8,.2,1),background .3s,box-shadow .3s,border-color .3s;text-align:left;font-family:inherit;color:inherit;z-index:2}
 .node:hover{transform:translateY(-3px);border-color:var(--fg-dim);box-shadow:0 18px 40px -18px rgba(0,0,0,.6);z-index:5}
 .node.open{z-index:8}                       /* 展开详情时置顶，覆盖下方节点 */
 .node.open:hover{transform:none}            /* 展开后不再因 hover 位移，详情面板稳定 */
@@ -569,16 +585,18 @@ section.block{margin-top:54px}
 @keyframes fadeUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .task{display:flex;align-items:flex-start;gap:9px;padding:6px 0;font-size:12.5px;line-height:1.4}
 .task input{margin-top:2px;accent-color:var(--growth);cursor:pointer;flex-shrink:0;width:15px;height:15px}
-.tcell{display:flex;flex-direction:column}
 .task label{cursor:pointer;color:var(--fg-dim)}
 .task.done label{color:var(--fg-faint);text-decoration:line-through;text-decoration-color:var(--growth)}
-.vchecks{font-size:10.5px;color:var(--bud);margin-top:3px;padding-left:2px;opacity:.85}
+/* 验收子任务：缩进挂在对应学习任务下 */
+.task.vt{padding-left:20px;font-size:11.5px}
+.task.vt label{color:var(--bud)}
+.task.vt input{accent-color:var(--bud);width:13px;margin-top:3px}
+/* 清单型知识点(有验收)：勾选框禁用淡化，掌握看验收 */
+.task.checklist input{opacity:.35;cursor:not-allowed;accent-color:var(--fg-faint)}
+.task.checklist label{color:var(--fg-faint)}
+.clist{display:inline-block;font-size:9px;font-weight:700;color:var(--bud);background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.3);padding:1px 6px;border-radius:8px;margin-right:5px;vertical-align:1px}
 .task-group{margin-top:6px}
-.task-group:first-child{margin-top:0}
 .task-glabel{display:block;font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--fg-faint);margin-bottom:2px;text-transform:uppercase}
-.task-group.verify{margin-top:12px;padding:10px 10px 4px;background:rgba(251,191,36,.06);border:1px solid rgba(251,191,36,.3);border-radius:10px}
-.task-group.verify .task-glabel{color:var(--bud)}
-.task.vt input{accent-color:var(--bud)}
 .res{font-size:11px;color:var(--growth);text-decoration:none;margin-left:3px;opacity:.85}
 .res:hover{opacity:1}
 
@@ -630,28 +648,33 @@ def render_achievements(ach_results):
     return html
 
 
-def _render_task_list(tasks, nid, kind, title_map=None):
-    """渲染一组任务（kind: 'task' 或 'verify'），返回 HTML。
-    title_map: {task_id: title}，用于 verify 的 checks 字段翻译成任务名。
-    """
-    title_map = title_map or {}
+def _render_one_task(tk, nid, kind):
+    """渲染单个任务。kind='task' 学习知识点 / 'verify' 验收。
+    学习知识点若有验收：勾选框置灰禁用(只是清单)，掌握看验收。"""
+    tid = tk["id"]
+    dcls = " done" if tk.get("done") else ""
+    checked = "checked" if tk.get("done") else ""
+    res = f'<a class="res" href="{escape(tk["resource"])}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗</a>' if tk.get("resource") else ""
+    prefix = "🎯 " if kind == "verify" else ""
+    # 有验收的学习知识点：勾选框禁用，标题前加「清单」提示
+    is_checklist = (kind == "task" and bool(tk.get("verify")))
+    cb_attrs = 'disabled' if is_checklist else ''
+    cb_cls = ' checklist' if is_checklist else ''
+    title_prefix = '<span class="clist">清单</span>' if is_checklist else ''
+    return (
+        f'<div class="task{dcls}{" vt" if kind=="verify" else ""}{cb_cls}">'
+        f'<input type="checkbox" id="tk-{nid}-{tid}" data-key="{nid}/{tid}" {checked} {cb_attrs} onclick="event.stopPropagation();onToggle(this)">'
+        f'<label for="tk-{nid}-{tid}">{title_prefix}{prefix}{escape(tk["title"])}</label>{res}</div>'
+    )
+
+
+def _render_task_list(tasks, nid):
+    """渲染学习任务列表；每个任务若有 verify 子任务，缩进挂在其下。"""
     out = ""
     for tk in tasks:
-        tid = tk["id"]
-        dcls = " done" if tk.get("done") else ""
-        checked = "checked" if tk.get("done") else ""
-        res = f'<a class="res" href="{escape(tk["resource"])}" target="_blank" rel="noopener" onclick="event.stopPropagation()">🔗</a>' if tk.get("resource") else ""
-        prefix = "🎯 " if kind == "verify" else ""
-        # 验收任务的 checks 关联：显示「└ 检查: 任务名」
-        checks_html = ""
-        if kind == "verify" and tk.get("checks"):
-            names = [title_map.get(c, c) for c in tk["checks"]]
-            checks_html = '<span class="vchecks">└ 检查: ' + "、".join(escape(n) for n in names) + '</span>'
-        out += (
-            f'<div class="task{dcls}{" vt" if kind=="verify" else ""}">'
-            f'<input type="checkbox" id="tk-{nid}-{tid}" data-key="{nid}/{tid}" {checked} onclick="event.stopPropagation();onToggle(this)">'
-            f'<span class="tcell"><label for="tk-{nid}-{tid}">{prefix}{escape(tk["title"])}</label>{res}{checks_html}</span></div>'
-        )
+        out += _render_one_task(tk, nid, "task")
+        for vt in tk.get("verify", []):
+            out += _render_one_task(vt, nid, "verify")
     return out
 
 
@@ -659,7 +682,6 @@ def render_node(nid, info):
     node = info["node"]
     st = node_status(node)
     done, total, pct = node_progress(node)
-    ld, lt, vd, vt = node_learn_verify(node)
     orb = {"done": "🍎", "learning": "🌼", "locked": "🌱"}[st]
     # 方向归属色点
     dirs = info.get("dirs", [])
@@ -668,19 +690,15 @@ def render_node(nid, info):
         dots = '<div class="dir-dots">' + "".join(
             f'<i style="background:{escape(c)}" title="{escape(did)}"></i>' for (did, c, _) in dirs
         ) + '</div>'
-    # 学习任务 id→title 映射，供验收 checks 翻译
-    title_map = {t["id"]: t["title"] for t in node.get("tasks", [])}
-    # 详情：学习任务 + 验收任务（分栏）
-    detail = ""
-    if node.get("tasks"):
-        detail += '<div class="task-group"><span class="task-glabel">学习</span>' + _render_task_list(node["tasks"], nid, "task") + '</div>'
-    if node.get("verify"):
-        detail += '<div class="task-group verify"><span class="task-glabel">🎯 验收(点灯必做)</span>' + _render_task_list(node["verify"], nid, "verify", title_map) + '</div>'
-    # 进度文本：有验收时分开展示
-    if vt > 0:
-        ptxt = f"学习 {ld}/{lt} · 验收 {vd}/{vt}"
-    else:
-        ptxt = f"{done}/{total} · {pct}%"
+    # 详情：学习任务（验收缩进挂在各自学习任务下）
+    detail = _render_task_list(node.get("tasks", []), nid)
+    # 兼容旧数据：节点级 verify
+    legacy_v = node.get("verify", [])
+    if legacy_v:
+        detail += '<div class="task-group"><span class="task-glabel">🎯 验收</span>'
+        detail += "".join(_render_one_task(vt, nid, "verify") for vt in legacy_v)
+        detail += '</div>'
+    ptxt = f"{done}/{total} · {pct}%"
     return (
         f'<button class="node s-{st}" data-node="{nid}" data-pct="{pct}" data-done="{done}" data-total="{total}" '
         f'data-top="{info["y"]}" data-left="{info["x"]}" style="left:{info["x"]}px;top:{info["y"]}px" onclick="openNode(this)">'
@@ -771,65 +789,70 @@ function openNode(el){
 function layoutAvoid(){
   const canvas=document.querySelector('.dag-canvas'); if(!canvas)return;
   const nodes=[...canvas.querySelectorAll('.node[data-node]')];
-  // 还原所有节点到原始 top，再按 open 情况重排
   const baseH=parseFloat(canvas.dataset.baseH||canvas.style.height);
   canvas.dataset.baseH=baseH;
-  let push=0, openTop=Infinity;
   const openEl=canvas.querySelector('.node.open');
+  let push=0, openTop=Infinity;
   if(openEl){
-    // 先把 open 节点临时放回原始 top 测它含详情的真实高度
-    nodes.forEach(n=>{ n.style.top=n.dataset.top+'px'; });
     const oTop=parseFloat(openEl.dataset.top);
-    const oBottom=oTop+openEl.offsetHeight;     // 含展开详情的实际底边
-    const gap=NODE_GAP;                          // 详情底与下方节点之间留的间距
-    // 下方节点（原始 top 严格大于 open 节点 top）下推
-    push=0;
-    nodes.forEach(n=>{
-      const t=parseFloat(n.dataset.top);
-      if(t>oTop){
-        const want=t+ (oBottom - oTop) + gap - (t-oTop); // 让其顶部 ≥ oBottom+gap
-        // 更直接：下推量 = oBottom+gap - t（若该节点原顶本就在 oBottom 之上才需推）
-        const need=Math.max(0,(oBottom+gap)-t);
-        push=Math.max(push,need);
-      }
-    });
+    // 先把所有节点放回原位，测 open 节点含详情的真实底边
+    nodes.forEach(n=>{ n.style.top=n.dataset.top+'px'; });
+    const oBottom=oTop+openEl.offsetHeight;
+    // 紧邻 open 节点的下一行原顶 = oTop + ROW_GAP；详情溢出行间隙的量即需下推量
+    const ROW_GAP=176;
+    push=Math.max(0, (oBottom+NODE_GAP)-(oTop+ROW_GAP));
     openTop=oTop;
   }
-  // 应用：下方节点(原始top>openTop)整体下推 push，其余归原位
+  // 下方节点(原始 top 严格大于 open 节点 top)整体下推 push，其余归原位
   nodes.forEach(n=>{
     const t=parseFloat(n.dataset.top);
     n.style.top = (push>0 && t>openTop ? t+push : t) + 'px';
   });
   canvas.style.height=(baseH+push)+'px';
-  drawEdges();
+  drawEdges();   // 用真实 offsetHeight + 新 top 重画，连线对齐
 }
 
-/* 节点级实时进度刷新 */
+/* 节点级实时进度刷新（按「知识点」掌握度统计） */
 function recalc(){
   document.querySelectorAll('.node[data-node]').forEach(el=>{
-    const learnCbs=el.querySelectorAll('.task-group:not(.verify) input[type=checkbox]');
-    const verifyCbs=el.querySelectorAll('.task-group.verify input[type=checkbox]');
-    let ld=0,lt=learnCbs.length,vd=0,vt=verifyCbs.length;
-    learnCbs.forEach(c=>{if(c.checked)ld++;});
-    verifyCbs.forEach(c=>{if(c.checked)vd++;});
-    const done=ld+vd,total=lt+vt;
-    const pct=total?Math.round(done/total*100):0;
-    const st=pct>=100?'done':(done>0?'learning':'locked');
+    // 按渲染顺序解析知识点：每个非 vt 的 .task 是一个知识点，其后紧跟的 .vt 是它的验收
+    const rows=[...el.querySelectorAll('.detail .task')];
+    let mastered=0,total=0,anyChecked=false;
+    let i=0;
+    while(i<rows.length){
+      const r=rows[i];
+      if(r.classList.contains('vt')){ i++; continue; }   // 跳过孤立的验收(不应发生)
+      total++;
+      const cb=r.querySelector('input[type=checkbox]');
+      // 收集本知识点紧跟的验收行
+      const verifies=[];
+      let j=i+1;
+      while(j<rows.length && rows[j].classList.contains('vt')){ verifies.push(rows[j]); j++; }
+      const vCbs=verifies.map(v=>v.querySelector('input[type=checkbox]'));
+      vCbs.forEach(c=>{if(c&&c.checked)anyChecked=true;});
+      if(cb){if(cb.checked)anyChecked=true;}
+      // 掌握判定：有验收→验收全勾；无验收→学习任务勾
+      let m;
+      if(vCbs.length){ m=vCbs.every(c=>c&&c.checked); }
+      else { m=cb&&cb.checked; }
+      if(m)mastered++;
+      i=j;
+    }
+    const pct=total?Math.round(mastered/total*100):0;
+    const st=(total>0&&mastered===total)?'done':(anyChecked?'learning':'locked');
     el.classList.remove('s-done','s-learning','s-locked'); el.classList.add('s-'+st);
-    el.dataset.pct=pct; el.dataset.done=done; el.dataset.total=total;
+    el.dataset.pct=pct; el.dataset.done=mastered; el.dataset.total=total;
     const orb={done:'🍎',learning:'🌼',locked:'🌱'}[st];
     const o=el.querySelector('.node-orb'); if(o)o.textContent=orb;
     const f=el.querySelector('.nbar > i'); if(f)f.style.width=pct+'%';
-    const c=el.querySelector('.ncount'); if(c){
-      c.textContent = vt>0 ? ('学习 '+ld+'/'+lt+' · 验收 '+vd+'/'+vt) : (done+'/'+total+' · '+pct+'%');
-    }
+    const c=el.querySelector('.ncount'); if(c)c.textContent=mastered+'/'+total+' · '+pct+'%';
   });
   drawEdges();   // 进度变化重画边(已完成→高亮绿)
   layoutAvoid(); // 勾选可能改变详情高度，重新避让
 }
 
 /* ─── 单画布 DAG 连线：按依赖图连所有边 ─── */
-const NODE_W=168, NODE_H=96, NODE_GAP=16;   /* NODE_GAP: 展开详情底与下方节点的间距 */
+const NODE_W=168, NODE_H=96, NODE_GAP=16;   /* NODE_H: 未展开节点的默认高度(估算); drawEdges 用真实 offsetHeight */
 function drawEdges(){
   const svg=document.querySelector('.forest-card .edges');
   const canvas=document.querySelector('.dag-canvas');
@@ -844,11 +867,11 @@ function drawEdges(){
     const a=nodeOf[fromId], b=nodeOf[toId];
     if(!a||!b)return;
     // from 是依赖(基础在上·y更小), to 是后续(向下·y更大)
-    // from 底端中心 → to 顶端中心
+    // from 底端中心 → to 顶端中心；底端用真实高度(展开时也贴实际边)
     const ax=parseFloat(a.style.left)+NODE_W/2;
-    const ay=parseFloat(a.style.top)+NODE_H;       // from 底
+    const ay=parseFloat(a.style.top)+a.offsetHeight;
     const bx=parseFloat(b.style.left)+NODE_W/2;
-    const by=parseFloat(b.style.top);              // to 顶
+    const by=parseFloat(b.style.top);
     // 贝塞尔：控制点拉向垂直方向，形成柔和的枝条
     const cy=(ay+by)/2;
     const d=`M ${ax},${ay} C ${ax},${cy} ${bx},${cy} ${bx},${by}`;
@@ -1243,22 +1266,25 @@ def render_markdown(trees, ach_results):
             L.append(f"### {b.get('icon','')} {b['name']} — {bpct}% ({bd}/{bt})")
             if b.get("description"):
                 L.append(f"> {b['description']}\n")
-            L.append("| 节点 | 状态 | 进度 | 子任务 |")
-            L.append("|------|------|------|--------|")
+            L.append("| 节点 | 状态 | 掌握度 | 知识点 |")
+            L.append("|------|------|--------|--------|")
             for n in b.get("nodes", []):
                 st = node_status(n)
                 nd, nt, _ = node_progress(n)
-                ld, lt, vd, vt = node_learn_verify(n)
                 sttxt = {"done": "✅ 已完成", "learning": "🔄 学习中", "locked": "🔒 未解锁"}[st]
-                done_tasks = [tk["title"] for tk in n.get("tasks", []) if tk.get("done")]
-                todo_tasks = [tk["title"] for tk in n.get("tasks", []) if not tk.get("done")]
-                done_verify = [tk["title"] for tk in n.get("verify", []) if tk.get("done")]
-                todo_verify = [tk["title"] for tk in n.get("verify", []) if not tk.get("done")]
                 parts = []
-                if done_tasks: parts.append("✅ " + "、".join(done_tasks))
-                if todo_tasks: parts.append("⬜ " + "、".join(todo_tasks))
-                if done_verify: parts.append("🎯✅ " + "、".join(done_verify))
-                if todo_verify: parts.append("🎯⬜ " + "、".join(todo_verify))
+                for tk in n.get("tasks", []):
+                    ver = tk.get("verify", [])
+                    if ver:
+                        # 清单型知识点：掌握看验收
+                        allV = all(v.get("done") for v in ver)
+                        parts.append(f"{'✅' if allV else '⬜'} {tk['title']} <sub>(清单)</sub>")
+                        for vt in ver:
+                            vmark = "🎯✅" if vt.get("done") else "🎯⬜"
+                            parts.append(f"&nbsp;&nbsp;{vmark} {vt['title']}")
+                    else:
+                        mark = "✅" if tk.get("done") else "⬜"
+                        parts.append(f"{mark} {tk['title']}")
                 taskcell = "<br>".join(parts) if parts else "—"
                 L.append(f"| **{n['name']}** | {sttxt} | {nd}/{nt} | {taskcell} |")
             L.append("")
