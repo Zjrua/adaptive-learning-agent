@@ -75,8 +75,8 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
   return (
     <section className="panel active">
       <div className="panel-head">
-        <h2 className="serif panel-title">🚀 初始化</h2>
-        <p className="panel-sub">建用户 → 配置大模型 → 生成你的技能树</p>
+        <h2 className="serif panel-title">⚙️ 设置</h2>
+        <p className="panel-sub">用户切换 · 大模型配置 · AI 生成/重建技能树</p>
       </div>
 
       <div className="setup-steps">

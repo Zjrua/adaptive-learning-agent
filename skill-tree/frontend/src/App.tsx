@@ -9,8 +9,8 @@ import { SetupPanel } from './panels/SetupPanel'
 import { AiModal } from './AiModal'
 import { Achievement } from './Achievement'
 
-type Route = 'tree' | 'profile' | 'templates' | 'fruit' | 'setup'
-const ROUTES: Route[] = ['tree', 'profile', 'templates', 'fruit', 'setup']
+type Route = 'tree' | 'profile' | 'templates' | 'fruit' | 'setup' | 'settings'
+const ROUTES: Route[] = ['tree', 'profile', 'templates', 'fruit', 'setup', 'settings']
 
 function currentRoute(): Route {
   const h = (location.hash || '#tree').slice(1)
@@ -37,6 +37,13 @@ export default function App() {
     api.graph().then(setGraph).catch(e => console.error('graph', e))
   }, [])
   useEffect(refreshGraph, [refreshGraph, reloadKey])
+
+  // 新用户首次访问：自动跳初始化（已进入 setup/settings 时不重复跳）
+  useEffect(() => {
+    if (graph?.is_new_user && route !== 'setup' && route !== 'settings') {
+      location.hash = 'setup'
+    }
+  }, [graph, route])
 
   // 用户切换：清缓存 + 重拉所有
   const onUserChanged = useCallback(() => {
@@ -67,7 +74,6 @@ export default function App() {
         <nav className="sb-nav">
           {([
             ['tree', '🌳', '技能树'],
-            ['setup', '🚀', '初始化'],
             ['profile', '👤', '个人信息'],
             ['templates', '📄', '简历模板'],
             ['fruit', '🍎', '果实展示'],
@@ -77,6 +83,10 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <div className="sb-bottom">
+          <button className={`sb-item settings-link ${route === 'settings' || route === 'setup' ? 'active' : ''}`} onClick={() => go('settings')}>
+            <span className="sb-ico">⚙️</span><span>设置</span>
+          </button>
         <div className="sb-foot">
           <div className="sb-prog-ring">
             <svg viewBox="0 0 60 60">
@@ -94,6 +104,7 @@ export default function App() {
             <b>{ov?.achievements_unlocked ?? 0}</b> 成就<br />
             <b>{ov?.mastered_points ?? 0}/{ov?.total_points ?? 0}</b> 知识点
           </div>
+        </div>
         </div>
       </aside>
 
@@ -130,7 +141,7 @@ export default function App() {
             </div>
           </>
         )}
-        {route === 'setup' && <SetupPanel onUserChanged={onUserChanged} onDone={() => go('tree')} />}
+        {(route === 'setup' || route === 'settings') && <SetupPanel onUserChanged={onUserChanged} onDone={() => go('tree')} />}
         {route === 'profile' && <ProfilePanel profile={profile} />}
         {route === 'templates' && <TemplatesPanel templates={templates} />}
         {route === 'fruit' && <FruitPanel fruits={fruits} />}
