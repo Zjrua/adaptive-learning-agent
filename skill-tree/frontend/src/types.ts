@@ -65,6 +65,8 @@ export interface Graph {
   dir_order: DirOrder[]
   achievements: Achievement[]
   overview: Overview
+  user_id?: string
+  is_new_user?: boolean
 }
 
 // 其他板块

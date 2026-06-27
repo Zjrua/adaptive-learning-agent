@@ -176,3 +176,58 @@ body {
 .fbtn.primary { background: var(--growth); color: #062013; border-color: var(--growth); }
 .fbtn.primary:hover { box-shadow: 0 8px 22px -8px var(--growth-glow); color: #062013; }
 .fbtn.disabled { opacity: .4; cursor: not-allowed; }
+
+/* ─── 通用按钮/表单 ─── */
+.btn { padding: 10px 18px; border-radius: 12px; border: 1px solid var(--line); background: var(--moss); color: var(--fg-dim); font-size: 14px; font-weight: 600; cursor: pointer; transition: border-color .2s, color .2s, background .2s; font-family: inherit; }
+.btn:hover { border-color: var(--fg-dim); color: var(--fg); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.primary { background: var(--growth); color: #062013; border-color: var(--growth); }
+.btn.primary:hover { box-shadow: 0 8px 22px -8px var(--growth-glow); color: #062013; }
+.field { width: 100%; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--ink); color: var(--fg); font-size: 14px; font-family: inherit; margin: 4px 0 12px; }
+.field:focus { outline: none; border-color: var(--growth); }
+.field.ta { resize: vertical; line-height: 1.6; }
+.field-label { font-size: 12px; color: var(--fg-faint); margin-top: 10px; display: block; }
+.inline-form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.empty-state { text-align: center; padding: 60px 20px; color: var(--fg-dim); }
+.empty-state .btn { margin-top: 16px; }
+
+/* ─── 初始化 ─── */
+.setup-steps { display: flex; gap: 8px; margin-bottom: 24px; }
+.setup-step { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 20px; background: var(--moss); border: 1px solid var(--line); font-size: 13px; color: var(--fg-faint); }
+.setup-step.active { border-color: var(--growth); color: var(--fg); box-shadow: 0 0 14px -6px var(--growth-glow); }
+.setup-step.done { color: var(--growth); border-color: var(--growth); }
+.step-num { width: 22px; height: 22px; border-radius: 50%; background: var(--line); display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+.setup-step.active .step-num { background: var(--growth); color: #062013; }
+.setup-step.done .step-num { background: var(--growth); color: #062013; }
+.setup-card { background: var(--moss); border: 1px solid var(--line); border-radius: 16px; padding: 24px; max-width: 680px; }
+.setup-error { background: rgba(220,38,38,.12); border: 1px solid #dc2626; color: #fca5a5; padding: 10px 14px; border-radius: 10px; margin: 12px 0; font-size: 13px; }
+.setup-hint { font-size: 12.5px; color: var(--fg-faint); margin-top: 14px; }
+.user-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.user-chip { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 12px; background: var(--moss-2); border: 1px solid var(--line); color: var(--fg-dim); cursor: pointer; font-size: 14px; transition: .2s; }
+.user-chip:hover { border-color: var(--fg-dim); color: var(--fg); }
+.user-chip.active { border-color: var(--growth); color: var(--fg); }
+.user-chip .uid { font-size: 11px; color: var(--fg-faint); }
+.user-chip .cur { font-size: 10px; color: var(--growth); background: rgba(74,222,128,.12); padding: 2px 7px; border-radius: 8px; }
+.provider-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.provider-chip { display: flex; flex-direction: column; gap: 3px; padding: 12px 16px; border-radius: 12px; background: var(--moss-2); border: 1px solid var(--line); color: var(--fg-dim); cursor: pointer; transition: .2s; }
+.provider-chip:hover { border-color: var(--fg-dim); color: var(--fg); }
+.provider-chip.active { border-color: var(--growth); color: var(--fg); box-shadow: 0 0 14px -6px var(--growth-glow); }
+.p-label { font-size: 14px; font-weight: 600; }
+.p-model { font-size: 11px; color: var(--fg-faint); }
+.test-msg { margin-top: 12px; font-size: 13px; padding: 8px 12px; border-radius: 8px; }
+.test-msg.ok { background: rgba(74,222,128,.1); border: 1px solid var(--growth); color: var(--growth); }
+.test-msg.fail { background: rgba(220,38,38,.1); border: 1px solid #dc2626; color: #fca5a5; }
+.gen-preview { margin-top: 18px; padding: 16px; background: var(--moss-2); border: 1px solid var(--growth); border-radius: 12px; }
+.gen-tree { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; color: var(--fg-dim); display: flex; justify-content: space-between; }
+.gen-count { font-size: 12px; color: var(--fg-faint); }
+
+/* ─── AI 模态框 ─── */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 100; padding: 20px; }
+.modal { background: var(--moss); border: 1px solid var(--line); border-radius: 18px; padding: 24px; max-width: 560px; width: 100%; max-height: 88vh; overflow-y: auto; }
+.modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.modal-head h3 { font-size: 22px; }
+.modal-close { background: none; border: none; color: var(--fg-faint); font-size: 20px; cursor: pointer; }
+.modal-tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+.mtab { padding: 8px 16px; border-radius: 10px; background: var(--moss-2); border: 1px solid var(--line); color: var(--fg-faint); cursor: pointer; font-size: 13px; }
+.mtab.active { border-color: var(--growth); color: var(--fg); }
+.gen-json { background: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 12px; font-size: 11.5px; color: var(--fg-dim); max-height: 200px; overflow: auto; white-space: pre-wrap; margin: 8px 0 12px; }
