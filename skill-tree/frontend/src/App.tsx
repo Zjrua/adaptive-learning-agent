@@ -70,7 +70,12 @@ export default function App() {
           <div className="sb-prog-ring">
             <svg viewBox="0 0 60 60">
               <circle className="ring-bg" cx="30" cy="30" r="26" />
-              <circle className="ring-fg" cx="30" cy="30" r="26" style={{ strokeDashoffset: ringDash }} />
+              <circle
+                className="ring-fg"
+                cx="30" cy="30" r="26"
+                strokeDasharray={163.4}
+                strokeDashoffset={ringDash}
+              />
             </svg>
             <span className="ring-txt">{ov?.overall_pct ?? 0}%</span>
           </div>
