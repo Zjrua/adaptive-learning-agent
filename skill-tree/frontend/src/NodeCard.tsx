@@ -51,7 +51,7 @@ export const NodeCard = forwardRef<HTMLDivElement, Props>(function NodeCard(
         </div>
       )}
       {open && (
-        <div className="detail">
+        <div className="detail" onClick={e => e.stopPropagation()}>
           {node.tasks.map(tk => (
             <KnowledgePoint
               key={tk.id}
