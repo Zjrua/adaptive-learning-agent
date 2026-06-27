@@ -44,6 +44,9 @@ skill-tree/frontend/*.tsbuildinfo
 skill-tree/backend/__pycache__/
 skill-tree/backend/*.pyc
 
+# Per-user LLM API keys (NEVER commit) — contains api_key secrets
+skill-tree/data/users/*/llm_config.json
+
 # Python cache
 __pycache__/
 *.pyc

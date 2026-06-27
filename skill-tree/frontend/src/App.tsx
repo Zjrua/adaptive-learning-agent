@@ -1,14 +1,16 @@
 import { useEffect, useState, useCallback } from 'react'
 import type { Graph, Profile, Template, Fruit } from './types'
-import { api } from './api'
+import { api, getUserId } from './api'
 import { SkillTree } from './SkillTree'
 import { ProfilePanel } from './panels/ProfilePanel'
 import { TemplatesPanel } from './panels/TemplatesPanel'
 import { FruitPanel } from './panels/FruitPanel'
+import { SetupPanel } from './panels/SetupPanel'
+import { AiModal } from './AiModal'
 import { Achievement } from './Achievement'
 
-type Route = 'tree' | 'profile' | 'templates' | 'fruit'
-const ROUTES: Route[] = ['tree', 'profile', 'templates', 'fruit']
+type Route = 'tree' | 'profile' | 'templates' | 'fruit' | 'setup'
+const ROUTES: Route[] = ['tree', 'profile', 'templates', 'fruit', 'setup']
 
 function currentRoute(): Route {
   const h = (location.hash || '#tree').slice(1)
@@ -21,6 +23,8 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [templates, setTemplates] = useState<Template[]>([])
   const [fruits, setFruits] = useState<Fruit[]>([])
+  const [showAi, setShowAi] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
     const onHash = () => setRoute(currentRoute())
@@ -28,11 +32,17 @@ export default function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  // 拉取主图
+  // 拉取主图（用户切换/数据变更后重拉）
   const refreshGraph = useCallback(() => {
     api.graph().then(setGraph).catch(e => console.error('graph', e))
   }, [])
-  useEffect(refreshGraph, [refreshGraph])
+  useEffect(refreshGraph, [refreshGraph, reloadKey])
+
+  // 用户切换：清缓存 + 重拉所有
+  const onUserChanged = useCallback(() => {
+    setProfile(null); setTemplates([]); setFruits([])
+    setReloadKey(k => k + 1)
+  }, [])
 
   // 各板块懒加载
   useEffect(() => {
@@ -57,6 +67,7 @@ export default function App() {
         <nav className="sb-nav">
           {([
             ['tree', '🌳', '技能树'],
+            ['setup', '🚀', '初始化'],
             ['profile', '👤', '个人信息'],
             ['templates', '📄', '简历模板'],
             ['fruit', '🍎', '果实展示'],
@@ -91,24 +102,47 @@ export default function App() {
           <>
             <div className="panel active">
               <div className="panel-head">
-                <h2 className="serif panel-title">知识图谱</h2>
-                <p className="panel-sub">所有方向汇于一棵树 · <b>基础在上，向下生长</b> · 按依赖关系连线</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
+                  <div>
+                    <h2 className="serif panel-title">知识图谱</h2>
+                    <p className="panel-sub">所有方向汇于一棵树 · <b>基础在上，向下生长</b> · 按依赖关系连线 · 当前用户 <b>{getUserId()}</b></p>
+                  </div>
+                  <button className="btn primary" onClick={() => setShowAi(true)}>✨ AI 生成</button>
+                </div>
               </div>
-              <div className="dashboard">
-                <Metric v={`${ov!.overall_pct}%`} l="整体掌握度" />
-                <Metric v={`${ov!.mastered_points}`} l="已掌握知识点" sub={`/ ${ov!.total_points}`} />
-                <Metric v={`${ov!.done_nodes}`} l="已点亮节点" sub={`/ ${ov!.total_nodes}`} />
-                <Metric v={`${ov!.achievements_unlocked}`} l="成就绽放" sub={`/ ${ov!.achievements_total}`} />
-              </div>
-              <SkillTree graph={graph} onToggle={api.patchTask} onChanged={refreshGraph} />
-              <Achievement achievements={graph.achievements} />
+              {graph.is_new_user ? (
+                <div className="empty-state">
+                  <p>这个用户还没有技能树。</p>
+                  <button className="btn primary" onClick={() => go('setup')}>🚀 去初始化生成 →</button>
+                </div>
+              ) : (
+                <>
+                  <div className="dashboard">
+                    <Metric v={`${ov!.overall_pct}%`} l="整体掌握度" />
+                    <Metric v={`${ov!.mastered_points}`} l="已掌握知识点" sub={`/ ${ov!.total_points}`} />
+                    <Metric v={`${ov!.done_nodes}`} l="已点亮节点" sub={`/ ${ov!.total_nodes}`} />
+                    <Metric v={`${ov!.achievements_unlocked}`} l="成就绽放" sub={`/ ${ov!.achievements_total}`} />
+                  </div>
+                  <SkillTree graph={graph} onToggle={api.patchTask} onChanged={refreshGraph} />
+                  <Achievement achievements={graph.achievements} />
+                </>
+              )}
             </div>
           </>
         )}
+        {route === 'setup' && <SetupPanel onUserChanged={onUserChanged} onDone={() => go('tree')} />}
         {route === 'profile' && <ProfilePanel profile={profile} />}
         {route === 'templates' && <TemplatesPanel templates={templates} />}
         {route === 'fruit' && <FruitPanel fruits={fruits} />}
       </main>
+
+      {showAi && graph && (
+        <AiModal
+          existingIds={graph.nodes.map(n => n.id)}
+          onClose={() => setShowAi(false)}
+          onChanged={refreshGraph}
+        />
+      )}
     </div>
   )
 }
