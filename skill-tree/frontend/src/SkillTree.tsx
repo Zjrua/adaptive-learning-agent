@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { Graph, GraphNode, Edge } from './types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { Graph, Edge } from './types'
 import { NodeCard } from './NodeCard'
 
 interface Props {
@@ -9,38 +9,47 @@ interface Props {
 }
 
 /**
- * 技能树画布。布局单一来源：节点和 SVG 连线都从同一份 placed 派生 → 展开/勾选时同步，永不错位。
- * 展开避让：openNode 变化时用 useLayoutEffect 实测详情真实高度，算 push，下方节点下推。
+ * 技能树画布。
+ * - 节点位置用 CSS transition 平滑过渡
+ * - SVG 连线在每一帧从节点【实际 DOM 位置】(getBoundingClientRect) 重算 → 跟随过渡，不错位
+ * - 展开避让：ResizeObserver 监听 openNode 实际渲染高度，高度变化即重算 push
  */
 export function SkillTree({ graph, onToggle, onChanged }: Props) {
   const [openNode, setOpenNode] = useState<string | null>(null)
   const [hoverNode, setHoverNode] = useState<string | null>(null)
   const [push, setPush] = useState(0)
   const nodeRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const svgRef = useRef<SVGSVGElement>(null)
+  const canvasRef = useRef<HTMLDivElement>(null)
 
   const { nodes, edges, canvas, constants } = graph
   const { NODE_W, NODE_H, ROW_GAP } = constants
 
-  // ── 展开避让：实测 openNode 真实高度，算 push ──
-  useLayoutEffect(() => {
-    if (!openNode) { setPush(0); return }
+  // openNode 的实时渲染高度（含展开详情）。用 ResizeObserver 跟踪，过渡期间持续更新。
+  const [openHeight, setOpenHeight] = useState(NODE_H)
+  useEffect(() => {
+    if (!openNode) { setOpenHeight(NODE_H); return }
     const el = nodeRefs.current.get(openNode)
-    if (!el) { setPush(0); return }
-    const on = nodes.find(n => n.id === openNode)!
-    const realH = el.offsetHeight           // 含详情的真实高度
-    const openBottom = on.y + realH
-    // 下一行原顶 = on.y + ROW_GAP；溢出行间隙的量即 push（留 16px 间距）
-    setPush(Math.max(0, openBottom + 16 - (on.y + ROW_GAP)))
-  }, [openNode, nodes, ROW_GAP])
+    if (!el) return
+    const update = () => setOpenHeight(el.offsetHeight)
+    update()
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [openNode, NODE_H])
 
-  // placed：openNode 下方节点 + push，其余原位
+  // push：由 openHeight 驱动（不用 effect，直接在渲染时算，避免时序问题）
+  const openBaseY = openNode ? nodes.find(n => n.id === openNode)?.y ?? Infinity : Infinity
+  const openBottom = openNode ? openBaseY + openHeight : 0
+  const pushComputed = openNode ? Math.max(0, openBottom + 16 - (openBaseY + ROW_GAP)) : 0
+  useEffect(() => { setPush(pushComputed) }, [pushComputed])
+
   const placed = useMemo(() => {
-    const openY = openNode ? nodes.find(n => n.id === openNode)?.y : Infinity
-    return nodes.map(n => ({ node: n, x: n.x, y: n.y > (openY ?? Infinity) ? n.y + push : n.y }))
-  }, [nodes, openNode, push])
+    return nodes.map(n => ({ node: n, x: n.x, y: n.y > openBaseY ? n.y + push : n.y }))
+  }, [nodes, openBaseY, push])
   const height = canvas.h + push
 
-  // ── 悬停路径：上游祖先 + 下游后代 ──
+  // ── 悬停路径 ──
   const pathSet = useMemo(() => {
     if (!hoverNode) return null
     const parents = new Map<string, string[]>()
@@ -63,14 +72,40 @@ export function SkillTree({ graph, onToggle, onChanged }: Props) {
     return new Set([hoverNode, ...reach(hoverNode, parents), ...reach(hoverNode, children)])
   }, [hoverNode, edges])
 
-  const placedById = new Map(placed.map(p => [p.node.id, p]))
   const dim = hoverNode !== null
-
   const onEdge = (e: Edge) => pathSet?.has(e.from) && pathSet?.has(e.to)
-  // openNode 的真实底边（用于它自己向下出发的边）
-  const openRealBottom = openNode && nodeRefs.current.get(openNode)
-    ? (nodes.find(n => n.id === openNode)!.y + nodeRefs.current.get(openNode)!.offsetHeight)
-    : null
+
+  // ── 连线：每帧从节点实时 DOM 位置重算，跟随过渡 ──
+  const drawEdges = () => {
+    const svg = svgRef.current, canvasEl = canvasRef.current
+    if (!svg || !canvasEl) return
+    const cr = canvasEl.getBoundingClientRect()
+    const rectOf = (id: string) => {
+      const el = nodeRefs.current.get(id); if (!el) return null
+      const r = el.getBoundingClientRect()
+      return { x: r.left - cr.left + r.width / 2, bottom: r.bottom - cr.top, top: r.top - cr.top }
+    }
+    svg.querySelectorAll('path.edge').forEach(p => {
+      const f = p.getAttribute('data-from')!, t = p.getAttribute('data-to')!
+      const a = rectOf(f), b = rectOf(t)
+      if (!a || !b) return
+      const ax = a.x, ay = a.bottom, bx = b.x, by = b.top, cy = (ay + by) / 2
+      p.setAttribute('d', `M ${ax},${ay} C ${ax},${cy} ${bx},${cy} ${bx},${by}`)
+      const fromNode = nodes.find(n => n.id === f)
+      const onPath = pathSet ? onEdge({ from: f, to: t }) : false
+      const fromDone = fromNode?.state === 'done'
+      const cls = dim ? (onPath ? 'onpath' : 'hide') : (fromDone ? 'active' : 'normal')
+      p.setAttribute('class', `edge ${cls}`)
+    })
+  }
+
+  useEffect(() => {
+    drawEdges()
+    let raf = 0, start = performance.now()
+    const loop = (now: number) => { drawEdges(); if (now - start < 400) raf = requestAnimationFrame(loop) }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [placed, hoverNode, nodes, dim, openHeight])
 
   return (
     <section className="forest-card" style={{ marginTop: 22 }}>
@@ -85,24 +120,11 @@ export function SkillTree({ graph, onToggle, onChanged }: Props) {
         </div>
       </div>
       <div className={`dag-wrap ${dim ? 'dim' : ''}`}>
-        <div className="dag-canvas" style={{ width: canvas.w, height }}>
-          <svg className="edges" width={canvas.w} height={height} viewBox={`0 0 ${canvas.w} ${height}`}>
-            {edges.map((e, i) => {
-              const a = placedById.get(e.from), b = placedById.get(e.to)
-              if (!a || !b) return null
-              const ax = a.x + NODE_W / 2
-              // from 的底边：openNode 用实测真实底，其余用 NODE_H
-              const ay = (e.from === openNode && openRealBottom !== null) ? openRealBottom : a.y + NODE_H
-              const bx = b.x + NODE_W / 2
-              const by = b.y
-              const cy = (ay + by) / 2
-              const onPath = pathSet ? onEdge(e) : false
-              const fromDone = a.node.state === 'done'
-              const cls = dim ? (onPath ? 'onpath' : 'hide') : (fromDone ? 'active' : 'normal')
-              return (
-                <path key={i} className={`edge ${cls}`} d={`M ${ax},${ay} C ${ax},${cy} ${bx},${cy} ${bx},${by}`} />
-              )
-            })}
+        <div className="dag-canvas" ref={canvasRef} style={{ width: canvas.w, height }}>
+          <svg className="edges" ref={svgRef} width={canvas.w} height={height} viewBox={`0 0 ${canvas.w} ${height}`}>
+            {edges.map((e, i) => (
+              <path key={i} className="edge normal" data-from={e.from} data-to={e.to} d="" />
+            ))}
           </svg>
           {placed.map(({ node, x, y }) => (
             <NodeCard
