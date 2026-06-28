@@ -58,7 +58,7 @@ build_profile.cmd recommendation     REM 只编译推荐 profile
 
 ## 与技能树的关系
 
-- 技能树节点的 `resource` 用相对路径引用 `../../projects/` 源码（学习参考）
+- 技能树节点的 `resource` 用相对路径引用 `../../projects/` 源码（projects 已移出本仓库到 `../projects/`，后端 PROJECTS_DIR 指向那里，前端 fixRes 走 /projects 代理）
 - 果实展示板块读 `profiles/` + `build/*.pdf`，技能树 API `/api/templates` `/api/fruits` 扫描本目录
 - `data/users/<id>/profile.json` 是前端个人信息板块的数据源，⚠️ 须与 `shared/*.tex` 同步
 
@@ -75,4 +75,4 @@ build_profile.cmd recommendation     REM 只编译推荐 profile
 
 - 不要在 resume 模板填虚构经历或数据
 - 不要提交编译产物（.aux/.log/.fls 等，已 gitignore）
-- 不要改各开源项目代码（projects/ 是学习参考）
+- 不要改各开源项目代码（projects/ 已移出本仓库到 `../projects/`，是学习参考）

@@ -63,8 +63,9 @@ npm run dev                # http://localhost:5173（代理 /api → :8000）
 │   ├── profiles/              岗位 profile(推荐/搜索/广告/agent)
 │   ├── templates/             7 套 LaTeX 模板
 │   └── build/                 编译脚本 + PDF 输出
-├── projects/                ← 【果实】搜广推开源项目(学习参考，数千文件不纳入重构)
-└── docs/                    学习笔记
+├── docs/                    学习笔记
+│
+../projects/                 ← 【果实】搜广推开源项目(已移出本仓库到父目录，与 Resume 同级)
 ```
 
 ## 核心功能

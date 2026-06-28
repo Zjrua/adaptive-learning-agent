@@ -39,7 +39,8 @@ RESUME_DIR = Path(os.environ.get("RESUME_DIR", HERE.parent.parent / "resume"))
 TEMPLATES_DIR = RESUME_DIR / "templates"
 PROFILES_DIR = RESUME_DIR / "profiles"
 BUILD_DIR = RESUME_DIR / "build"
-PROJECTS_DIR = Path(os.environ.get("PROJECTS_DIR", HERE.parent.parent / "projects"))
+# projects/ 已移出本仓库到父目录(与 Resume 同级)。env 可覆盖。
+PROJECTS_DIR = Path(os.environ.get("PROJECTS_DIR", HERE.parent.parent.parent / "projects"))
 
 app = FastAPI(title="Skill Tree API")
 app.add_middleware(

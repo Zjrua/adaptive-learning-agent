@@ -8,8 +8,9 @@ services:
       # data 目录：后端读写（勾选进度落盘到 JSON）
       - ./data:/app/data
       # resume / projects：只读挂载（果实展示、节点 resource 链接、PDF 打开）
+      # projects 已移出本仓库到父目录(与 Resume 同级)
       - ../resume:/app/resume:ro
-      - ../projects:/app/projects:ro
+      - ../../projects:/app/projects:ro
     environment:
       - PYTHONUNBUFFERED=1
       - DATA_DIR=/app/data

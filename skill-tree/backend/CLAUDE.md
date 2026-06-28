@@ -68,7 +68,8 @@
 ## 路径解析
 
 - `DATA_ROOT` = `skill-tree/data`（env 可覆盖）
-- `RESUME_DIR` / `PROJECTS_DIR` = 上级 resume/projects（env 可覆盖，容器挂载用）
+- `RESUME_DIR` / `PROJECTS_DIR` = 上级 resume / 父目录 projects（env 可覆盖，容器挂载用）
+- **projects 已移出本仓库**：默认 `PROJECTS_DIR = HERE.parent.parent.parent / "projects"` = `D:/Projects/projects`（与 Resume 同级）
 
 ## 开发约定
 

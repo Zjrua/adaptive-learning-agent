@@ -1,5 +1,0 @@
-*.pyc
-*.log
-code/log/
-code/log_tensorboard/
-code/saved/

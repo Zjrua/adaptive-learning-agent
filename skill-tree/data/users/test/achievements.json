@@ -1,0 +1,211 @@
+{
+  "achievements": [
+    {
+      "id": "first_blood",
+      "icon": "🌱",
+      "name": "初露锋芒",
+      "desc": "点亮第一个技能节点",
+      "condition": {
+        "type": "nodes_done",
+        "min": 1
+      },
+      "tier": "bronze"
+    },
+    {
+      "id": "foundation_done",
+      "icon": "🧱",
+      "name": "地基夯实",
+      "desc": "完成任一方向「基础层」全部分支",
+      "condition": {
+        "type": "branch_done",
+        "branch_id": "foundation"
+      },
+      "tier": "bronze"
+    },
+    {
+      "id": "recall_master",
+      "icon": "🪝",
+      "name": "召回大师",
+      "desc": "完成推荐方向「召回」整支分支",
+      "condition": {
+        "type": "branch_done",
+        "tree_id": "recommendation",
+        "branch_id": "recall"
+      },
+      "tier": "silver"
+    },
+    {
+      "id": "ctr_master",
+      "icon": "⚖️",
+      "name": "CTR 预估师",
+      "desc": "完成推荐方向「精排/CTR」整支分支",
+      "condition": {
+        "type": "branch_done",
+        "tree_id": "recommendation",
+        "branch_id": "ranking"
+      },
+      "tier": "silver"
+    },
+    {
+      "id": "multitask_master",
+      "icon": "🔀",
+      "name": "多任务专家",
+      "desc": "完成广告方向「多任务/转化」整支分支",
+      "condition": {
+        "type": "branch_done",
+        "tree_id": "ads",
+        "branch_id": "multitask"
+      },
+      "tier": "silver"
+    },
+    {
+      "id": "paper_worm",
+      "icon": "📚",
+      "name": "论文蠕虫",
+      "desc": "累计完成 5 个链接到论文(arxiv/acm)的子任务",
+      "condition": {
+        "type": "task_resource_contains",
+        "substring": "arxiv",
+        "min": 5
+      },
+      "tier": "silver"
+    },
+    {
+      "id": "code_reader",
+      "icon": "💻",
+      "name": "源码行者",
+      "desc": "累计完成 5 个链接到 projects/ 源码的子任务",
+      "condition": {
+        "type": "task_resource_contains",
+        "substring": "projects/",
+        "min": 5
+      },
+      "tier": "silver"
+    },
+    {
+      "id": "ten_tasks",
+      "icon": "⭐",
+      "name": "积少成多",
+      "desc": "累计完成 10 个子任务",
+      "condition": {
+        "type": "tasks_done",
+        "min": 10
+      },
+      "tier": "bronze"
+    },
+    {
+      "id": "thirty_tasks",
+      "icon": "🌟",
+      "name": "渐入佳境",
+      "desc": "累计完成 30 个子任务",
+      "condition": {
+        "type": "tasks_done",
+        "min": 30
+      },
+      "tier": "silver"
+    },
+    {
+      "id": "fifty_tasks",
+      "icon": "🏆",
+      "name": "百炼成钢",
+      "desc": "累计完成 50 个子任务",
+      "condition": {
+        "type": "tasks_done",
+        "min": 50
+      },
+      "tier": "gold"
+    },
+    {
+      "id": "tree_half",
+      "icon": "🎄",
+      "name": "小有所成",
+      "desc": "任一方向总进度达到 50%",
+      "condition": {
+        "type": "tree_progress",
+        "min": 50
+      },
+      "tier": "gold"
+    },
+    {
+      "id": "tree_done",
+      "icon": "👑",
+      "name": "一方宗师",
+      "desc": "任一方向总进度达到 100%",
+      "condition": {
+        "type": "tree_progress",
+        "min": 100
+      },
+      "tier": "gold"
+    },
+    {
+      "id": "trident",
+      "icon": "🔱",
+      "name": "搜广推三叉戟",
+      "desc": "推荐 / 搜索 / 广告 三方向各达 30%",
+      "condition": {
+        "type": "all_trees_progress",
+        "min": 30
+      },
+      "tier": "gold"
+    },
+    {
+      "id": "llm_pioneer",
+      "icon": "🤖",
+      "name": "大模型先锋",
+      "desc": "完成推荐方向「大模型推荐」整支分支",
+      "condition": {
+        "type": "branch_done",
+        "tree_id": "recommendation",
+        "branch_id": "llm_rec"
+      },
+      "tier": "gold"
+    },
+    {
+      "id": "agent_seed",
+      "icon": "🌱",
+      "name": "Agent 播种",
+      "desc": "在 AI Agent 方向点亮第一个节点",
+      "condition": {
+        "type": "branch_done",
+        "tree_id": "agent",
+        "branch_id": "llm_foundation"
+      },
+      "tier": "silver"
+    },
+    {
+      "id": "rag_builder",
+      "icon": "📚",
+      "name": "知识工程师",
+      "desc": "完成 AI Agent 方向「RAG 检索增强」整支分支",
+      "condition": {
+        "type": "branch_done",
+        "tree_id": "agent",
+        "branch_id": "rag"
+      },
+      "tier": "gold"
+    },
+    {
+      "id": "agent_master",
+      "icon": "🧙",
+      "name": "Agent 架构师",
+      "desc": "完成 AI Agent 方向「Agent 框架」+「工具调用」两支分支",
+      "condition": {
+        "type": "branch_done",
+        "tree_id": "agent",
+        "branch_id": "agent_framework"
+      },
+      "tier": "gold"
+    },
+    {
+      "id": "quadruple",
+      "icon": "🎴",
+      "name": "四方全能",
+      "desc": "推荐 / 搜索 / 广告 / Agent 四方向各达 25%",
+      "condition": {
+        "type": "all_trees_progress",
+        "min": 25
+      },
+      "tier": "gold"
+    }
+  ]
+}
