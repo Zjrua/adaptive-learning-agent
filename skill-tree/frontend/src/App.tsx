@@ -113,13 +113,8 @@ export default function App() {
           <>
             <div className="panel active">
               <div className="panel-head">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
-                  <div>
-                    <h2 className="serif panel-title">知识图谱</h2>
-                    <p className="panel-sub">所有方向汇于一棵树 · <b>基础在上，向下生长</b> · 按依赖关系连线 · 当前用户 <b>{getUserId()}</b></p>
-                  </div>
-                  <button className="btn primary" onClick={() => setShowAi(true)}>✨ AI 生成</button>
-                </div>
+                <h2 className="serif panel-title">知识图谱</h2>
+                <p className="panel-sub">所有方向汇于一棵树 · <b>基础在上，向下生长</b> · 当前用户 <b>{getUserId()}</b></p>
               </div>
               {graph.is_new_user ? (
                 <div className="empty-state">
@@ -153,6 +148,14 @@ export default function App() {
           onClose={() => setShowAi(false)}
           onChanged={refreshGraph}
         />
+      )}
+
+      {/* 右下角悬浮 AI 按钮（任意页面可见，树板块下点开对话） */}
+      {graph && !graph.is_new_user && !showAi && route !== 'setup' && route !== 'settings' && (
+        <button className="ai-fab" onClick={() => setShowAi(true)} aria-label="AI 生成">
+          <span className="ai-fab-icon">✦</span>
+          <span className="ai-fab-pulse" />
+        </button>
       )}
     </div>
   )
