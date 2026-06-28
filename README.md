@@ -1,90 +1,81 @@
 # 🌳 实习技能树
 
-实习准备项目。**技能树是主体**——用它规划学习路径、追踪进度、解锁成就；
-简历和开源项目是这棵树结出的**果实**。
+一个**状态驱动**的实习备战系统：用可视化的技能树规划学习路径、追踪掌握进度、解锁成就；简历和开源项目是这棵树结出的**果实**。
 
 > Obsidian / Notion / 飞书是对**已有知识**的总结；技能树是对**未来学习路径**的规划，有明确的进度反馈。
 
 ```
-   所有实习方向的技能 → 合并成一张知识图谱(DAG)
-            │  基础(Python/统计)在上，向下生长成枝叶
-            │
-   ┌────────┼─────────┐
-   ▼        ▼         ▼
-🎯推荐   🔍搜索    📢广告      ← 节点的方向归属(着色)
-   │        │         │
-   ▼        ▼         ▼
-📄 简历成品(PDF)     📦 开源项目   ← 果实(resume/ + projects/)
+   找一个实习方向 → AI 自动种一棵树 → 边学边点亮 → 结出简历果实
+              │
+   ┌──────────┼──────────┐
+   ▼          ▼          ▼
+ 🎯推荐      🔍搜索      📢广告   🤖Agent    ← 方向(着色分支)
+   │     共享基础汇成根系            │
+   ▼                               ▼
+ 📄 简历(PDF)                    📦 开源项目      ← 果实
 ```
 
-不再按方向割裂成几棵树——**整个仓库就是一棵树**。基础（Python/PyTorch/统计等）在上，
-向下生长成各方向的枝叶。前端是**侧栏导航的单页应用**：技能树 / 个人信息 / 简历模板 / 果实展示 四个板块切换。
+## 技术栈
+
+**React + FastAPI + docker-compose 全栈应用**
+
+| 层 | 技术 | 说明 |
+|----|------|------|
+| 前端 | React 18 + TypeScript + Vite | 单页应用，玉青宝石工坊美学，DAG 知识图谱 |
+| 后端 | FastAPI (Python) | 多用户隔离 + AI 生成引擎，零三方依赖(ai/layout/progress 纯标准库) |
+| 数据 | JSON 文件 | 每用户独立 `data/users/<id>/`，无数据库 |
+| 部署 | docker-compose | 一键起 frontend(:5173) + backend(:8001) |
+
+## 快速开始
+
+### docker-compose（推荐）
+```bash
+cd skill-tree
+docker-compose up          # 前端 http://localhost:5173  后端 http://localhost:8000
+```
+
+### 本地开发
+```bash
+# 终端 1：后端
+cd skill-tree/backend
+pip install -r requirements.txt
+python -m uvicorn main:app --port 8000 --reload
+
+# 终端 2：前端
+cd skill-tree/frontend
+npm install
+npm run dev                # http://localhost:5173（代理 /api → :8000）
+```
+
+首次进入：**新用户自动跳初始化**（建用户 → 配模型 → 贴 JD → AI 生成技能树）。已有用户从侧栏底部「⚙️设置」进入。
 
 ## 目录结构
 
 ```
-├── skill-tree/              ← 【主体】技能树系统（侧栏单页应用）
-│   ├── data/                  ✏️ 数据源(只改这里)：方向节点 + 个人信息 + 成就
-│   │   ├── recommendation.json  推荐：召回/精排/序列/大模型推荐
-│   │   ├── search.json          搜索：召回倒排/LTR/向量检索
-│   │   ├── ads.json             广告：CTR/多任务/创意机制
-│   │   ├── profile.json         个人信息(姓名/教育/经历，⚠️ 须与 resume/shared 同步)
-│   │   └── achievements.json    全局成就(铜/银/金)
-│   ├── tools/render.py         🔧 生成器：JSON → 侧栏单页应用 + Markdown
-│   └── dist/                   🔧 产物(已 gitignore)
-│       ├── skill-tree.html       侧栏单页应用(4 板块, 浏览器打开)
-│       └── PROGRESS.md           进度表(GitHub/Obsidian 可读)
-├── resume/                  ← 【果实】简历
-│   ├── shared/                 素材单一数据源(个人信息/教育/经历)
-│   ├── profiles/               岗位 profile(推荐/搜索/广告)
-│   ├── templates/              7套 LaTeX 模板
-│   └── build/                  编译脚本 + PDF 输出
-├── projects/                ← 【果实】搜广推开源项目(学习/复现参考)
-└── docs/                    ← 学习笔记
+├── skill-tree/              ← 【主体】技能树全栈应用
+│   ├── backend/               FastAPI：main.py(API) + ai.py(大模型) + layout.py(DAG布局) + progress.py(掌握度)
+│   ├── frontend/              React+TS：App.tsx(SPA) + SkillTree.tsx(DAG) + NodeCard.tsx + SetupPanel.tsx + AiModal.tsx
+│   ├── data/users/<id>/       每用户独立数据：方向树JSON + profile.json + achievements.json + llm_config.json
+│   ├── tools/render.py        旧单文件生成器（生成 PROGRESS.md 供 GitHub 预览）
+│   └── docker-compose.yml
+├── resume/                  ← 【果实】模块化 LaTeX 简历
+│   ├── shared/                素材单一数据源(personal/education/experience/skills)
+│   ├── profiles/              岗位 profile(推荐/搜索/广告/agent)
+│   ├── templates/             7 套 LaTeX 模板
+│   └── build/                 编译脚本 + PDF 输出
+├── projects/                ← 【果实】搜广推开源项目(学习参考，数千文件不纳入重构)
+└── docs/                    学习笔记
 ```
 
-详见 [skill-tree/README.md](skill-tree/README.md)。
+## 核心功能
 
-## 核心理念
-
-沿用简历模块化架构的思路——**单一数据源，呈现与内容分离**：
-
-| | 简历系统 | 技能树系统 |
-|---|---|---|
-| 数据源 | `resume/shared/` | `skill-tree/data/*.json` |
-| 产物 | `resume/build/*.pdf` | `skill-tree/dist/skill-tree.html` |
-| 生成 | XeLaTeX + build_profile.cmd | `python render.py` |
-| 原则 | 改一处素材，多份简历同步 | 改一处 JSON，树/进度/成就同步 |
-
-技能树节点用相对路径**引用**简历和项目（`resource` 链论文/源码，`fruit` 链对应简历 profile），不改它们的位置。
-
-## 快速开始
-
-```bash
-# 1. 生成技能树（改 data/*.json 后必跑）
-python skill-tree/tools/render.py
-# 2. 浏览器打开
-start skill-tree/dist/skill-tree.html
-```
-
-浏览器里：**左侧侧栏切换四个板块**——🌳技能树（一张图看所有节点和依赖连线，基础在上）、👤个人信息、📄简历模板、🍎果实展示（打开编译好的 PDF）。点节点看子任务、勾选记录进度（自动存 localStorage），或读 `skill-tree/dist/PROGRESS.md` 看总览。
-
-## 日常学习循环
-
-1. **学** → 在「技能树」板块勾掉子任务（或改 JSON 的 `done` 重跑 render.py）
-2. **节点达成** → 回头把学到的东西写进 `resume/shared/`（结出果实）
-3. **看反馈** → 进度上涨、依赖连线变绿、成就解锁；侧栏进度环实时更新
-4. **投简历** → `cd resume/build && build_profile.cmd <profile>` 出 PDF → 到「果实展示」板块打开
-
-## 图谱内容（基于真实 projects/）
-
-| 方向 | 路径 | 对应开源项目 |
-|------|------|--------------|
-| 🎯 推荐 | 基础→召回→精排/CTR→序列→大模型推荐 | DeepMatch / DeepCTR-Torch / FuxiCTR / RecSystem-Pytorch / generative-recommenders / HLLM / OpenOneRec |
-| 🔍 搜索 | 基础→召回倒排→排序(LTR) | DeepMatch (DSSM) |
-| 📢 广告 | 基础→CTR预估→多任务/转化→创意机制 | DeepCTR-Torch (含 multitask) / FuxiCTR |
-
-三方向共享的基础（Python/PyTorch/统计等）用同名 node id 在图里自动去重，汇聚成根系。
+- **单画布 DAG 知识图谱**：所有方向合并去重成一张图，基础在上向下生长，贝塞尔曲线连线
+- **清单驱动掌握度**：每个知识点配验收任务（能默写/讲清/手算），验收全勾才算掌握
+- **悬停高亮学习路径**：悬停节点或方向标签 → 高亮上下游路径，其余淡化
+- **AI 生成技能树**：支持 DeepSeek/MiMo/智谱/Qwen/Moonshot/自定义，输入 JD 自动生成
+- **多用户隔离**：每用户独立数据目录，API Key 安全存储（gitignore 排除）
+- **成就系统**：铜/银/金三级，按掌握度/分支完成自动解锁
+- **侧栏 SPA**：技能树 / 个人信息 / 简历模板 / 果实展示 四板块 + 底部设置
 
 ## 编译简历
 
@@ -94,14 +85,15 @@ build_profile.cmd                    :: 编译所有 profile → build\<profile>
 build_profile.cmd recommendation     :: 只编译推荐算法岗
 ```
 
-首次使用补字体（billryan 等 `fonts/` 因体积未入 git）：见 [CLAUDE.md](CLAUDE.md)。
+详见 [resume/CLAUDE.md](resume/CLAUDE.md)。
 
 ## 设计原则
 
-- **只改 JSON**：加技能/成就/分支只动 `data/`，不碰代码
-- **不填虚构技能**：初始只放 CLAUDE.md 确认的真实方向，节点默认 `locked`，由你逐步推进
-- **零依赖**：生成器纯 Python 标准库，Windows 直接能跑
+- **改数据只动 JSON**：加技能/方向/成就只改 `data/users/<id>/`，浏览器刷新即生效
+- **零依赖后端**：ai/layout/progress 纯 Python 标准库，Windows 直接能跑
+- **不填虚构技能**：节点默认 locked，由用户逐步推进
+- **平滑演进**：用户抽象层预留鉴权/加密钩子，将来加登录不改业务代码
 
 ## 许可
 
-各模板和开源项目遵循其原始许可证；技能树系统（`skill-tree/`）为本人原创。
+技能树系统（`skill-tree/`）为本人原创；各模板和开源项目遵循其原始许可证。
