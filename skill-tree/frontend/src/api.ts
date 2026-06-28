@@ -57,6 +57,7 @@ export const api = {
       body: JSON.stringify(cfg),
     }).then(r => r.json()),
   testLlmConfig: (cfg: LlmConfig) => postJson<{ ok: boolean; message: string }>('/api/llm-config/test', cfg),
+  listModels: (cfg: LlmConfig) => postJson<{ ok: boolean; models: string[]; error?: string }>('/api/llm-config/models', cfg),
 
   // ── AI 生成 ──
   generateTree: (jd: string, extra: string) =>

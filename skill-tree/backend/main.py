@@ -270,6 +270,16 @@ def test_llm_config(cfg: LlmConfig) -> dict:
     return {"ok": ok, "message": msg}
 
 
+@app.post("/api/llm-config/models")
+def list_models_api(cfg: LlmConfig) -> dict:
+    """根据 base_url + api_key 拉取可用模型列表（OpenAI 兼容 /models）。"""
+    try:
+        models = ai_mod.list_models(cfg.base_url, cfg.api_key)
+        return {"ok": True, "models": models}
+    except Exception as e:
+        return {"ok": False, "models": [], "error": str(e)}
+
+
 @app.get("/api/providers")
 def providers() -> list[dict]:
     return ai_mod.PROVIDER_PRESETS

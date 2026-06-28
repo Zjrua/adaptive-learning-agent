@@ -16,6 +16,9 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
   const [cfg, setCfg] = useState<LlmConfig>({ provider: '', base_url: '', api_key: '', model: '' })
   const [testing, setTesting] = useState(false)
   const [testMsg, setTestMsg] = useState<{ ok: boolean; msg: string } | null>(null)
+  const [models, setModels] = useState<string[]>([])
+  const [fetchingModels, setFetchingModels] = useState(false)
+  const [modelErr, setModelErr] = useState('')
   const [jd, setJd] = useState('')
   const [generating, setGenerating] = useState(false)
   const [genResult, setGenResult] = useState<{ trees: any[]; profile: any } | null>(null)
@@ -42,6 +45,8 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
 
   const pickProvider = (p: Provider) => {
     setCfg(c => ({ ...c, provider: p.id, base_url: p.base_url, model: p.model }))
+    setModels([])   // 切供应商清空已拉取的模型列表
+    setModelErr('')
   }
   const saveCfg = async () => {
     await api.saveLlmConfig(cfg)
@@ -54,6 +59,23 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
       setTestMsg({ ok: r.ok, msg: r.message })
     } catch (e: any) { setTestMsg({ ok: false, msg: String(e.message || e) }) }
     setTesting(false)
+  }
+  const fetchModels = async () => {
+    if (!cfg.base_url || !cfg.api_key) { setModelErr('请先填 Base URL 和 API Key'); return }
+    setFetchingModels(true); setModelErr('')
+    try {
+      const r = await api.listModels(cfg)
+      if (r.ok && r.models.length) {
+        setModels(r.models)
+        // 若当前 model 不在列表里，默认选第一个
+        if (!cfg.model || !r.models.includes(cfg.model)) {
+          setCfg(c => ({ ...c, model: r.models[0] }))
+        }
+      } else {
+        setModelErr(r.error || '未获取到模型')
+      }
+    } catch (e: any) { setModelErr(String(e.message || e)) }
+    setFetchingModels(false)
   }
 
   const generate = async () => {
@@ -130,7 +152,18 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
           <label className="field-label">API Key</label>
           <input className="field" type="password" value={cfg.api_key} onChange={e => setCfg({ ...cfg, api_key: e.target.value })} placeholder="sk-..." />
           <label className="field-label">模型</label>
-          <input className="field" value={cfg.model} onChange={e => setCfg({ ...cfg, model: e.target.value })} placeholder="deepseek-chat" />
+          {models.length > 0 ? (
+            <select className="field" value={cfg.model} onChange={e => setCfg({ ...cfg, model: e.target.value })}>
+              {models.map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+          ) : (
+            <input className="field" value={cfg.model} onChange={e => setCfg({ ...cfg, model: e.target.value })} placeholder="deepseek-chat（或点右侧自动获取）" list="modellist" />
+          )}
+          <datalist id="modellist">{models.map(m => <option key={m} value={m} />)}</datalist>
+          <button className="btn" onClick={fetchModels} disabled={fetchingModels} style={{ marginTop: models.length > 0 ? 0 : -4, fontSize: 13 }}>
+            {fetchingModels ? '⏳ 获取中…' : models.length > 0 ? '🔄 刷新模型列表' : '🔍 获取模型列表'}
+          </button>
+          {modelErr && <div className="test-msg fail" style={{ marginTop: 10 }}>{modelErr}</div>}
           <div className="inline-form" style={{ marginTop: 16 }}>
             <button className="btn" onClick={testCfg} disabled={testing || !cfg.api_key}>{testing ? '测试中…' : '🔍 测连通'}</button>
             <button className="btn primary" onClick={saveCfg}>保存并下一步 →</button>
