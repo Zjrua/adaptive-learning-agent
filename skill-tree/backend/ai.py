@@ -63,6 +63,31 @@ def test_connection(base_url: str, api_key: str, model: str) -> tuple[bool, str]
         return False, str(e)
 
 
+def list_models(base_url: str, api_key: str) -> list[str]:
+    """调 OpenAI 兼容 /models 端点，返回模型 id 列表。所有预置供应商都支持。"""
+    if not base_url or not api_key:
+        return []
+    base = base_url.rstrip("/")
+    # 兼容：base_url 可能带或不带 /v1，统一指向 /models
+    url = f"{base}/models"
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Authorization", f"Bearer {api_key}")
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        # OpenAI 格式：{data: [{id: "model-name", ...}, ...]}
+        items = data.get("data", data) if isinstance(data, dict) else data
+        ids = [m.get("id", "") for m in items if isinstance(m, dict) and m.get("id")]
+        return sorted(ids)
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", errors="replace")[:200]
+        raise RuntimeError(f"HTTP {e.code}: {detail}")
+    except Exception as e:
+        raise RuntimeError(f"获取模型列表失败: {e}")
+    except Exception as e:
+        return False, str(e)
+
+
 # ─────────────────────────── JSON 提取与校验 ───────────────────────────
 def _extract_json(text: str) -> Any:
     """从模型输出里提取 JSON（容忍前后说明文字 + ```代码块）。"""
