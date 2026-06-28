@@ -151,14 +151,8 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
           <input className="field" value={cfg.base_url} onChange={e => setCfg({ ...cfg, base_url: e.target.value })} placeholder="https://api.deepseek.com/v1" />
           <label className="field-label">API Key</label>
           <input className="field" type="password" value={cfg.api_key} onChange={e => setCfg({ ...cfg, api_key: e.target.value })} placeholder="sk-..." />
-          <label className="field-label">模型</label>
-          {models.length > 0 ? (
-            <select className="field" value={cfg.model} onChange={e => setCfg({ ...cfg, model: e.target.value })}>
-              {models.map(m => <option key={m} value={m}>{m}</option>)}
-            </select>
-          ) : (
-            <input className="field" value={cfg.model} onChange={e => setCfg({ ...cfg, model: e.target.value })} placeholder="deepseek-chat（或点右侧自动获取）" list="modellist" />
-          )}
+          <label className="field-label">模型 {models.length > 0 && <span className="model-count">（{models.length} 个可选，也可手输）</span>}</label>
+          <input className="field" value={cfg.model} onChange={e => setCfg({ ...cfg, model: e.target.value })} placeholder="deepseek-chat / glm-5.2 / kimi-k2.7-code…" list="modellist" />
           <datalist id="modellist">{models.map(m => <option key={m} value={m} />)}</datalist>
           <button className="btn" onClick={fetchModels} disabled={fetchingModels} style={{ marginTop: models.length > 0 ? 0 : -4, fontSize: 13 }}>
             {fetchingModels ? '⏳ 获取中…' : models.length > 0 ? '🔄 刷新模型列表' : '🔍 获取模型列表'}
