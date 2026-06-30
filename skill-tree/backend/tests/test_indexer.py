@@ -53,3 +53,42 @@ def test_chunk_source_ids_unique():
     chunks = chunk_source("m.py", src)
     ids = [c["id"] for c in chunks]
     assert len(ids) == len(set(ids))
+
+
+from pathlib import Path
+from rag.indexer import build_index
+
+
+def test_build_index_embeds_and_skips_unchanged(tmp_path: Path, monkeypatch):
+    # 造一个假项目
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "a.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
+    idx = tmp_path / "idx"
+
+    # 桩 embed：返回每段文本字符长度的二维向量
+    calls = {"n": 0}
+
+    def fake_embed(cfg, texts):
+        calls["n"] += len(texts)
+        return [[float(len(t)), 1.0] for t in texts]
+
+    monkeypatch.setattr("rag.indexer.embed", fake_embed)
+    cfg = {"base_url": "x", "api_key": "y", "model": "m"}
+
+    # 首次构建
+    stats1 = build_index(cfg, proj, idx)
+    assert stats1["chunks"] >= 1
+    assert (idx / "code_chunks.jsonl").exists()
+    assert calls["n"] >= 1
+
+    # 第二次：文件未变，不应重新 embed
+    calls["n"] = 0
+    stats2 = build_index(cfg, proj, idx)
+    assert calls["n"] == 0  # 增量：mtime 没变，跳过
+
+    # 修改文件后，应重新 embed
+    (proj / "a.py").write_text("def foo():\n    return 2\n", encoding="utf-8")
+    calls["n"] = 0
+    build_index(cfg, proj, idx)
+    assert calls["n"] >= 1  # 重新索引了
