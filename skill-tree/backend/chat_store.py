@@ -7,6 +7,7 @@ Msg: {role, content, ts, events?: [...]}
 from __future__ import annotations
 import json
 import time
+import re
 from pathlib import Path
 
 
@@ -103,3 +104,57 @@ class ChatStore:
             if s["id"] == session_id:
                 return {**s, "exported_at": _now()}
         return {}
+
+    # ── 符号引用 ──
+    # 形如 #node_id  @resource_id  $dir_keyword
+    _REF_RE = re.compile(r"([#@$])([^\s#@$，。、]+)")
+
+    def resolve_refs(self, text: str, graph: dict, dirs: list, resources: list) -> list[dict]:
+        """解析文本里的 #/@/$ 引用，返回各对象展开内容 [{type, id, content}]。"""
+        out = []
+        seen = set()
+        for m in self._REF_RE.finditer(text):
+            sym, key = m.group(1), m.group(2).lower()
+            tag = (sym, key)
+            if tag in seen:
+                continue
+            seen.add(tag)
+            if sym == "#":
+                for n in graph.get("nodes", []):
+                    if key in (n.get("id", "").lower(), n.get("name", "").lower()):
+                        tasks = ", ".join(t.get("title", "") for t in n.get("tasks", []))
+                        out.append({"type": "node", "id": n.get("id"), "name": n.get("name"),
+                                    "content": f"[节点] {n.get('name')}({n.get('category','')}), "
+                                               f"依赖: {n.get('depends_on',[])}, 任务: {tasks}"})
+                        break
+            elif sym == "$":
+                for d in dirs:
+                    if key in d.get("id", "").lower() or key in d.get("title", "").lower():
+                        out.append({"type": "dir", "id": d.get("id"), "name": d.get("title"),
+                                    "content": f"[方向] {d.get('title')} {d.get('icon','')}"})
+                        break
+            elif sym == "@":
+                for r in resources:
+                    if key in r.get("id", "").lower() or key in r.get("label", "").lower():
+                        out.append({"type": "resource", "id": r.get("id"), "name": r.get("label"),
+                                    "content": f"[资源] {r.get('label')}: {r.get('url','')}"})
+                        break
+        return out
+
+    def suggest(self, ref_type: str, prefix: str, graph: dict, dirs: list, resources: list) -> list[dict]:
+        """mention 补全：按类型 + 前缀模糊匹配。返回 [{id, name, label?}]。"""
+        p = prefix.lower()
+        out = []
+        if ref_type == "node":
+            for n in graph.get("nodes", []):
+                if p in n.get("id", "").lower() or p in n.get("name", "").lower():
+                    out.append({"id": n.get("id"), "name": n.get("name")})
+        elif ref_type == "dir":
+            for d in dirs:
+                if p in d.get("id", "").lower() or p in d.get("title", "").lower():
+                    out.append({"id": d.get("id"), "name": d.get("title")})
+        elif ref_type == "resource":
+            for r in resources:
+                if p in r.get("id", "").lower() or p in r.get("label", "").lower():
+                    out.append({"id": r.get("id"), "name": r.get("label")})
+        return out[:8]
