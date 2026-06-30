@@ -309,9 +309,9 @@ Final Answer: <给用户的最终回答>
 
 ## 7. 前端对话交互
 
-### 7.1 AiModal 改造
+### 7.1 AiModal → AgentChat（改名重建）
 
-现有 tab 式（新方向 / 补节点）改成**多轮对话**，保留"生成 → 预览 → 确认"卡片：
+现有 tab 式 `AiModal.tsx`（新方向 / 补节点）改名为 `AgentChat.tsx` 并重建成**多轮对话**，保留"生成 → 预览 → 确认"卡片：
 
 ```
 ┌─ 右下角悬浮 → 展开成对话面板 ──────────────────────────┐
@@ -405,10 +405,12 @@ skill-tree/backend/
 
 ```
 skill-tree/frontend/src/
-├── AiModal.tsx           【重写】tab 表单 → 多轮对话 + SSE 消费 + 卡片渲染
+├── AiModal.tsx           【删除】遗留命名(既非 Modal 也非对话),改名重建
+├── AgentChat.tsx         【新增】多轮对话面板 + SSE 消费 + 卡片渲染(取代 AiModal)
 ├── ChatMessage.tsx       【新增】对话消息渲染(用户/助手/思考/工具气泡)
 ├── DocCard.tsx           【新增】文档卡片(预览/写飞书/丢弃)
 ├── api.ts                【修改】新增 agentChat(SSE)/publishDoc/buildIndex/status
+├── App.tsx               【修改】AiModal 引用 → AgentChat
 └── types.ts              【修改】新增 AgentEvent / DocCard / ToolCall 类型
 ```
 
@@ -447,7 +449,7 @@ README.md                                【修改】补充 lark-cli auth 配置
 - 后端 Agent loop（Planner/Executor/Writer）+ SSE
 - 混合工具协议 + 全部工具实现
 - RAG 混合检索（源码 AST 索引 + 论文抓取 + 图谱/简历精确检索）
-- 前端 AiModal 改对话 + 卡片渲染
+- 前端 `AiModal` 改名 `AgentChat` 并重写成对话 + 卡片渲染
 - 飞书文档产出（三种模板 + lark-cli 集成）
 
 ### 11.2 不在本次范围（out of scope）
