@@ -50,3 +50,42 @@ def test_normalize_tool_calls_from_native():
 def test_normalize_tool_calls_bad_args_returns_empty():
     native = [{"id": "c", "type": "function", "function": {"name": "x", "arguments": "bad"}}]
     assert normalize_tool_calls(native) == []
+
+
+# 追加到 tests/test_protocol.py
+from agent.protocol import chat_with_tools, resolve_tool_calls
+
+
+def test_chat_with_tools_sends_tools_field(monkeypatch):
+    sent = {}
+
+    def fake_urlopen(req, timeout=None):
+        sent["body"] = json.loads(req.data.decode())
+        class R:
+            def read(self): return b'{"choices":[{"message":{"content":"","tool_calls":[]}}]}'
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+        return R()
+    monkeypatch.setattr("agent.protocol.urllib.request.urlopen", fake_urlopen)
+    cfg = {"base_url": "http://x/v1", "api_key": "k", "model": "m"}
+    tools = [{"name": "foo", "description": "d", "parameters": {"type": "object", "properties": {}}}]
+    res = chat_with_tools(cfg, [{"role": "user", "content": "hi"}], tools)
+    assert sent["body"]["tools"][0]["function"]["name"] == "foo"
+    assert res["content"] == ""
+    assert res["tool_calls"] == []
+
+
+def test_resolve_tool_calls_prefers_native():
+    native_msg = {"content": "", "tool_calls": [
+        {"id": "c", "type": "function", "function": {"name": "get_progress", "arguments": "{}"}}]}
+    calls = resolve_tool_calls(native_msg, chat_fn=None)
+    assert len(calls) == 1
+    assert calls[0].name == "get_progress"
+
+
+def test_resolve_tool_calls_falls_back_to_directive():
+    msg = {"content": '<tool_call>{"name":"get_node","arguments":{"node_id":"x"}}</tool_call>',
+           "tool_calls": []}
+    calls = resolve_tool_calls(msg, chat_fn=None)
+    assert len(calls) == 1
+    assert calls[0].name == "get_node"
