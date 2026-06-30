@@ -108,7 +108,7 @@ def _save_json(p: Path, data: Any) -> None:
 def load_trees(data_dir: Path) -> list[dict]:
     trees = []
     for p in glob.glob(str(data_dir / "*.json")):
-        if os.path.basename(p) in ("achievements.json", "profile.json", "llm_config.json"):
+        if os.path.basename(p) in ("achievements.json", "profile.json", "llm_config.json", "chat_history.json"):
             continue
         trees.append(_load_json(Path(p)))
     trees.sort(key=lambda t: (t.get("order", 99), t.get("tree_id", "")))
@@ -181,7 +181,7 @@ class TaskPatch(BaseModel):
 
 def _find_tree_file(data_dir: Path, tree_id: str) -> Path | None:
     for p in glob.glob(str(data_dir / "*.json")):
-        if os.path.basename(p) in ("achievements.json", "profile.json", "llm_config.json"):
+        if os.path.basename(p) in ("achievements.json", "profile.json", "llm_config.json", "chat_history.json"):
             continue
         if _load_json(Path(p)).get("tree_id") == tree_id:
             return Path(p)
