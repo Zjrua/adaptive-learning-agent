@@ -132,7 +132,10 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
                 step = {"type": "tool", "action": calls[0].name, "arguments": calls[0].arguments}
 
         if step["type"] == "final":
-            yield {"type": "final_answer", "content": step["answer"]}
+            if step.get("answer") and not step["answer"].startswith("（已达到最大"):
+                yield from _stream_final(ctx, messages, chat_fn, cfg)
+            else:
+                yield {"type": "final_answer", "content": step["answer"]}
             break
 
         # 工具步
@@ -158,6 +161,31 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
         yield from _run_writer(ctx, user_input, messages, chat_fn, cfg)
 
     yield {"type": "done"}
+
+
+def _stream_final(ctx, messages, chat_fn, cfg) -> "Iterator[dict]":
+    """流式产出最终回答：用 chat_fn 的流式模式逐 token yield delta。
+    回退：若 chat_fn 不支持流式，降级为一次性 delta + final_done。"""
+    stream_messages = list(messages) + [
+        {"role": "user", "content": "请基于以上思考和检索结果，给出最终回答（中文，可用 markdown）。"}]
+    try:
+        chunks = chat_fn(cfg, stream_messages, tools=None, stream=True)
+        for ev in chunks:
+            if isinstance(ev, dict) and ev.get("type") == "delta":
+                yield {"type": "delta", "content": ev["content"]}
+        yield {"type": "final_done"}
+        return
+    except TypeError:
+        pass  # chat_fn 不接受 stream 参数
+    except Exception:
+        pass
+    # 降级：非流式一次性返回
+    try:
+        res = chat_fn(cfg, stream_messages, tools=None)
+        yield {"type": "delta", "content": res.get("content", "")}
+    except Exception as e:
+        yield {"type": "delta", "content": f"（生成失败: {e}）"}
+    yield {"type": "final_done"}
 
 
 def _run_writer(ctx, user_input, executor_messages, chat_fn, cfg) -> Iterator[dict]:
