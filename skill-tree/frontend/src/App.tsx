@@ -9,8 +9,8 @@ import { SetupPanel } from './panels/SetupPanel'
 import { AgentChat } from './AgentChat'
 import { Achievement } from './Achievement'
 
-type Route = 'tree' | 'profile' | 'templates' | 'fruit' | 'setup' | 'settings'
-const ROUTES: Route[] = ['tree', 'profile', 'templates', 'fruit', 'setup', 'settings']
+type Route = 'tree' | 'profile' | 'templates' | 'fruit' | 'chat' | 'setup' | 'settings'
+const ROUTES: Route[] = ['tree', 'profile', 'templates', 'fruit', 'chat', 'setup', 'settings']
 
 function currentRoute(): Route {
   const h = (location.hash || '#tree').slice(1)
@@ -23,7 +23,6 @@ export default function App() {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [templates, setTemplates] = useState<Template[]>([])
   const [fruits, setFruits] = useState<Fruit[]>([])
-  const [showAi, setShowAi] = useState(false)
   const [reloadKey, setReloadKey] = useState(0)
 
   useEffect(() => {
@@ -77,8 +76,9 @@ export default function App() {
             ['profile', '👤', '个人信息'],
             ['templates', '📄', '简历模板'],
             ['fruit', '🍎', '果实展示'],
+            ['chat', '🤖', 'AI 助手'],
           ] as [Route, string, string][]).map(([r, ico, label]) => (
-            <button key={r} className={`sb-item ${route === r ? 'active' : ''}`} onClick={() => go(r)}>
+            <button key={r} className={`sb-item ${route === r ? 'active' : ''} ${r === 'chat' ? 'nav-mobile-only' : ''}`} onClick={() => go(r)}>
               <span className="sb-ico">{ico}</span><span>{label}</span>
             </button>
           ))}
@@ -142,16 +142,18 @@ export default function App() {
         {route === 'fruit' && <FruitPanel fruits={fruits} />}
       </main>
 
-      {showAi && (
-        <AgentChat onClose={() => setShowAi(false)} />
+      {/* 移动端：#chat 路由全屏 AI 对话页 */}
+      {route === 'chat' && (
+        <div className="ai-page">
+          <AgentChat variant="page" />
+        </div>
       )}
 
-      {/* 右下角悬浮 AI 按钮（任意页面可见，树板块下点开对话） */}
-      {graph && !graph.is_new_user && !showAi && route !== 'setup' && route !== 'settings' && (
-        <button className="ai-fab" onClick={() => setShowAi(true)} aria-label="AI 生成">
-          <span className="ai-fab-icon">✦</span>
-          <span className="ai-fab-pulse" />
-        </button>
+      {/* 桌面端：右侧常驻 AI 栏（所有路由都在，不随路由切换重建） */}
+      {route !== 'setup' && route !== 'settings' && route !== 'chat' && (
+        <div className="ai-dock">
+          <AgentChat variant="dock" />
+        </div>
       )}
     </div>
   )
