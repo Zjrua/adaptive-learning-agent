@@ -35,13 +35,15 @@ def test_loop_chat_intent_short_circuits():
     fake = FakeChat([
         {"content": '{"intent":"chat","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
         {"content": "Thought: 闲聊\nFinal Answer: 你好！加油学算法！", "tool_calls": []},
+        {"content": "你好！加油学算法！", "tool_calls": []},   # 给 _stream_final 的流式响应
     ])
     ctx = _ctx()
     events = list(run_agent(ctx, "你好", chat_fn=fake, cfg={"base_url": "x", "api_key": "y"}))
     types = [e["type"] for e in events]
+    full = "".join(e.get("content", "") for e in events if e["type"] == "delta")
     assert "thinking" in types
-    assert "final_answer" in types
-    assert any("加油" in e.get("content", "") for e in events if e["type"] == "final_answer")
+    assert "delta" in types and "final_done" in types
+    assert "加油" in full
     assert "done" in types
 
 
@@ -50,12 +52,14 @@ def test_loop_tool_step_then_final():
         {"content": '{"intent":"query","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
         {"content": "Thought: 查进度\nAction: get_progress\nArguments: {}", "tool_calls": []},
         {"content": "Thought: 好了\nFinal Answer: 你整体 45%。", "tool_calls": []},
+        {"content": "你整体 45%。", "tool_calls": []},   # 给 _stream_final 的流式响应
     ])
     ctx = _ctx(graph={"nodes": [], "overview": {"overall_pct": 45, "mastered_points": 0, "total_points": 0}})
     events = list(run_agent(ctx, "我学到哪了", chat_fn=fake, cfg={"base_url": "x", "api_key": "y"}))
     assert any(e["type"] == "tool_call" and e["action"] == "get_progress" for e in events)
     assert any(e["type"] == "tool_result" for e in events)
-    assert any(e["type"] == "final_answer" for e in events)
+    assert any(e["type"] == "delta" for e in events)
+    assert any(e["type"] == "final_done" for e in events)
 
 
 def test_loop_max_steps_guard():
