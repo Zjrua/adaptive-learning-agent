@@ -68,3 +68,27 @@ def test_loop_max_steps_guard():
     ctx = _ctx()
     events = list(run_agent(ctx, "x", chat_fn=fake, cfg={"base_url": "x", "api_key": "y"}, max_steps=4))
     assert any(e["type"] == "final_answer" for e in events)  # 被截断后仍有 final
+
+
+# 追加到 tests/test_loop.py
+from agent.loop import extract_refs, inject_refs
+
+
+def test_extract_refs_finds_all_symbols():
+    text = "帮我讲讲 #deepfm 和 @dssm论文 以及 $推荐"
+    refs = extract_refs(text)
+    assert ("#", "deepfm") in refs
+    assert ("@", "dssm论文") in refs
+    assert ("$", "推荐") in refs
+
+
+def test_inject_refs_appends_context():
+    sys_msg = "你是助手。"
+    refs_ctx = "[节点] DeepFM(特征交叉), 依赖: ['fm']"
+    out = inject_refs(sys_msg, refs_ctx)
+    assert "用户引用了以下内容" in out
+    assert refs_ctx in out
+
+
+def test_inject_refs_empty_returns_unchanged():
+    assert inject_refs("原文", "") == "原文"

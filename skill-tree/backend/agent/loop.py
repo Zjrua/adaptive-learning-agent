@@ -14,6 +14,28 @@ from agent.tool_runtime import execute_tool, Context
 from agent.protocol import resolve_tool_calls
 
 
+_REF_RE = re.compile(r"([#@$])([^\s#@$，。、]+)")
+
+
+def extract_refs(text: str) -> list[tuple[str, str]]:
+    """提取文本里的 #/@/$ 引用，返回 [(symbol, key), ...]，去重保序。"""
+    seen = set()
+    out = []
+    for m in _REF_RE.finditer(text):
+        tag = (m.group(1), m.group(2))
+        if tag not in seen:
+            seen.add(tag)
+            out.append(tag)
+    return out
+
+
+def inject_refs(system_prompt: str, refs_context: str) -> str:
+    """把引用解析出的上下文注入 system prompt。无引用则原样返回。"""
+    if not refs_context.strip():
+        return system_prompt
+    return system_prompt + "\n\n用户引用了以下内容（作为额外上下文）：\n" + refs_context
+
+
 def parse_react(text: str) -> dict:
     """解析 ReAct 一步。返回 {type: tool|final, action?, arguments?, answer?}。
     - 含 Action 行 → tool 步（+ Arguments JSON，缺省 {}）
@@ -68,6 +90,18 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
 
     # ── 2. Executor（chat 短路；其余走 ReAct）──
     sys_e = render_executor(tools_text=tool_schema_text(tools), graph_summary=graph_summary)
+    # 引用预处理：解析用户消息里的 #/@/$ 并注入上下文
+    refs_text = ""
+    if hasattr(ctx, "resolve_refs_fn") and ctx.resolve_refs_fn:
+        refs = extract_refs(user_input)
+        if refs:
+            refs_str = " ".join(f"{s}{k}" for s, k in refs)
+            try:
+                resolved = ctx.resolve_refs_fn(refs_str)
+                refs_text = "\n".join(r.get("content", "") for r in resolved)
+            except Exception:
+                refs_text = ""
+    sys_e = inject_refs(sys_e, refs_text)
     messages = [{"role": "system", "content": sys_e}, {"role": "user", "content": user_input}]
 
     for step_i in range(max_steps):
