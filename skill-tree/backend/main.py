@@ -36,6 +36,7 @@ import agent.session as agent_session
 import agent.tool_runtime as agent_tool
 from rag.retriever import Retriever
 from larkpub import publish_doc
+from chat_store import ChatStore
 from fastapi.responses import StreamingResponse
 
 HERE = Path(__file__).resolve().parent
@@ -66,6 +67,14 @@ def rag_index_dir(uid: str) -> Path:
     d = user_dir(uid) / "rag_index"
     d.mkdir(parents=True, exist_ok=True)
     return d
+
+
+def chat_store_path(uid: str) -> Path:
+    return user_dir(uid) / "chat_history.json"
+
+
+def chat_store(uid: str) -> ChatStore:
+    return ChatStore(chat_store_path(uid))
 
 
 # ─────────────────────────── 用户与存储抽象 ───────────────────────────
@@ -487,6 +496,98 @@ def agent_publish_doc(req: PublishReq, x_user_id: str | None = Header(default=No
     if not url:
         raise HTTPException(500, "发布失败：请确认已执行 lark-cli auth login")
     return {"ok": True, "url": url}
+
+
+# ─────────────────────────── Chat 对话管理 ───────────────────────────
+@app.get("/api/chat/history")
+def get_chat_history(x_user_id: str | None = Header(default=None)) -> dict:
+    uid = resolve_user(x_user_id)
+    return chat_store(uid).load()
+
+
+class ChatSyncReq(BaseModel):
+    sessions: list
+    current_session_id: str | None = None
+
+
+@app.post("/api/chat/sync")
+def chat_sync(req: ChatSyncReq, x_user_id: str | None = Header(default=None)) -> dict:
+    uid = resolve_user(x_user_id)
+    chat_store(uid).replace_all(req.sessions, req.current_session_id)
+    return {"ok": True}
+
+
+class ChatTitleReq(BaseModel):
+    message: str
+
+
+@app.post("/api/chat/title")
+def chat_title(req: ChatTitleReq, x_user_id: str | None = Header(default=None)) -> dict:
+    """LLM 生成会话标题。失败回退首句截断。"""
+    uid = resolve_user(x_user_id)
+    cfg = _load_json(llm_config_path(uid)) if llm_config_path(uid).exists() else {}
+    fallback = req.message.strip().replace("\n", " ")[:20] or "新会话"
+    if not cfg.get("api_key"):
+        return {"title": fallback}
+    try:
+        from agent.protocol import chat_with_tools
+        res = chat_with_tools(cfg, [
+            {"role": "system", "content": "给下面的用户消息起一个 4-10 字的对话标题，只输出标题，不要标点。"},
+            {"role": "user", "content": req.message[:200]},
+        ], tools=None, temperature=0.3)
+        title = res.get("content", "").strip().replace("\n", "")[:20]
+        return {"title": title or fallback}
+    except Exception:
+        return {"title": fallback}
+
+
+@app.get("/api/chat/search")
+def chat_search(q: str, x_user_id: str | None = Header(default=None)) -> dict:
+    uid = resolve_user(x_user_id)
+    return {"hits": chat_store(uid).search(q)}
+
+
+@app.get("/api/chat/export")
+def chat_export(session_id: str | None = None, x_user_id: str | None = Header(default=None)) -> dict:
+    uid = resolve_user(x_user_id)
+    return chat_store(uid).export(session_id)
+
+
+def _collect_resources(trees: list) -> list:
+    """从技能树收集所有资源(论文链接/源码路径)供 @ 引用。"""
+    out = []
+    for t in trees:
+        for b in t.get("branches", []):
+            for n in b.get("nodes", []):
+                for tk in n.get("tasks", []):
+                    if tk.get("resource"):
+                        out.append({"id": f"{n['id']}_{tk.get('id','')}",
+                                    "label": f"{n.get('name')}·{tk.get('title','')}",
+                                    "url": tk["resource"]})
+    return out
+
+
+@app.get("/api/chat/resolve")
+def chat_resolve(refs: str, x_user_id: str | None = Header(default=None)) -> dict:
+    uid = resolve_user(x_user_id)
+    trees = load_trees(user_dir(uid))
+    lay = layout_mod.compute_layout(trees)
+    # dir_order 已是 [{id,title,icon,color,subtitle}] 格式
+    dirs = lay["dir_order"]
+    graph = {"nodes": lay["nodes"]}
+    resources = _collect_resources(trees)
+    return {"resolved": chat_store(uid).resolve_refs(refs, graph, dirs, resources)}
+
+
+@app.get("/api/chat/suggest")
+def chat_suggest(type: str, q: str, x_user_id: str | None = Header(default=None)) -> dict:
+    uid = resolve_user(x_user_id)
+    trees = load_trees(user_dir(uid))
+    lay = layout_mod.compute_layout(trees)
+    dirs = lay["dir_order"]
+    graph = {"nodes": lay["nodes"]}
+    resources = _collect_resources(trees)
+    return {"items": chat_store(uid).suggest(type, q, graph, dirs, resources)}
 
 
 # ─────────────────────────── 其他板块 ───────────────────────────
