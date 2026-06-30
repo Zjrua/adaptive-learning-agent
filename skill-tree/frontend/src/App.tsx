@@ -6,7 +6,7 @@ import { ProfilePanel } from './panels/ProfilePanel'
 import { TemplatesPanel } from './panels/TemplatesPanel'
 import { FruitPanel } from './panels/FruitPanel'
 import { SetupPanel } from './panels/SetupPanel'
-import { AiModal } from './AiModal'
+import { AgentChat } from './AgentChat'
 import { Achievement } from './Achievement'
 
 type Route = 'tree' | 'profile' | 'templates' | 'fruit' | 'setup' | 'settings'
@@ -142,12 +142,8 @@ export default function App() {
         {route === 'fruit' && <FruitPanel fruits={fruits} />}
       </main>
 
-      {showAi && graph && (
-        <AiModal
-          existingIds={graph.nodes.map(n => n.id)}
-          onClose={() => setShowAi(false)}
-          onChanged={refreshGraph}
-        />
+      {showAi && (
+        <AgentChat onClose={() => setShowAi(false)} />
       )}
 
       {/* 右下角悬浮 AI 按钮（任意页面可见，树板块下点开对话） */}
