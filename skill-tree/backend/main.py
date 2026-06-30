@@ -31,6 +31,12 @@ from pydantic import BaseModel
 import layout as layout_mod
 import progress as progress_mod
 import ai as ai_mod
+import agent.loop as agent_loop
+import agent.session as agent_session
+import agent.tool_runtime as agent_tool
+from rag.retriever import Retriever
+from larkpub import publish_doc
+from fastapi.responses import StreamingResponse
 
 HERE = Path(__file__).resolve().parent
 DATA_ROOT = Path(os.environ.get("DATA_ROOT", HERE.parent / "data"))
@@ -50,6 +56,16 @@ if PROJECTS_DIR.exists():
     app.mount("/projects", StaticFiles(directory=str(PROJECTS_DIR)), name="projects")
 if RESUME_DIR.exists():
     app.mount("/resume", StaticFiles(directory=str(RESUME_DIR)), name="resume")
+
+# ── Agent 会话存储 + RAG 索引目录 ──
+SESSIONS = agent_session.SessionStore(ttl=1800)
+
+
+def rag_index_dir(uid: str) -> Path:
+    """每用户独立 RAG 索引目录。"""
+    d = user_dir(uid) / "rag_index"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
 # ─────────────────────────── 用户与存储抽象 ───────────────────────────
@@ -366,6 +382,111 @@ def apply_direction(payload: dict, x_user_id: str | None = Header(default=None))
         fname = f"{t.get('tree_id','gen_dir')}.json"
         _save_json(dd / fname, t)
     return {"ok": True}
+
+
+# ─────────────────────────── Agent 对话(SSE) ───────────────────────────
+class AgentChatReq(BaseModel):
+    message: str
+
+
+def _build_ctx(uid: str) -> tuple[agent_tool.Context, dict]:
+    """组装工具执行上下文：当前图谱(layout+掌握度) + 简历 + retriever + 勾选回调。"""
+    dd = user_dir(uid)
+    trees = load_trees(dd)
+    lay = layout_mod.compute_layout(trees)
+    raw_nodes: dict[str, dict] = {}
+    for t in trees:
+        for b in t.get("branches", []):
+            for n in b.get("nodes", []):
+                raw_nodes.setdefault(n["id"], n)
+    for n in lay["nodes"]:
+        raw = raw_nodes.get(n["id"], {})
+        m, tot, pct = progress_mod.node_mastery(raw)
+        n["mastered"], n["total_points"], n["pct"] = m, tot, pct
+        n["state"] = progress_mod.node_status(raw)
+    resume: dict = {}
+    prof_p = dd / "profile.json"
+    if prof_p.exists():
+        resume = _load_json(prof_p)
+    cfg = _load_json(llm_config_path(uid)) if llm_config_path(uid).exists() else {}
+    retriever = Retriever(index_dir=rag_index_dir(uid), cfg=cfg)
+    ov = {"overall_pct": 0, "mastered_points": 0, "total_points": 0}
+    for t in trees:
+        mm, tt, _ = progress_mod.tree_progress(t.get("branches", []))
+        ov["mastered_points"] += mm
+        ov["total_points"] += tt
+    ov["overall_pct"] = 0 if ov["total_points"] == 0 else round(ov["mastered_points"] / ov["total_points"] * 100)
+    graph = {"nodes": lay["nodes"], "overview": ov}
+
+    def on_toggle(tree_id, node_id, task_id, done):
+        path = _find_tree_file(dd, tree_id)
+        if path is None:
+            return False
+        full = _load_json(path)
+        if _apply_done(full, node_id, task_id, done):
+            _save_json(path, full)
+            return True
+        return False
+
+    ctx = agent_tool.Context(uid=uid, graph=graph, resume=resume,
+                             retriever=retriever, rag_index_dir=rag_index_dir(uid))
+    ctx.on_toggle = on_toggle  # type: ignore[attr-defined]
+    return ctx, cfg
+
+
+@app.post("/api/agent/chat")
+def agent_chat(req: AgentChatReq, x_user_id: str | None = Header(default=None)):
+    """Agent 对话入口，SSE 流式返回事件。"""
+    uid = resolve_user(x_user_id)
+    ctx, cfg = _build_ctx(uid)
+    if not cfg.get("api_key"):
+        raise HTTPException(400, "请先配置 LLM (api_key)")
+
+    def event_stream():
+        for ev in agent_loop.run_agent(ctx, req.message, cfg=cfg):
+            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
+@app.post("/api/rag/build-index")
+def rag_build_index(x_user_id: str | None = Header(default=None)) -> dict:
+    """构建/刷新 RAG 源码索引（扫描 ../projects 下所有 .py，AST chunking + embedding）。"""
+    uid = resolve_user(x_user_id)
+    cfg = _load_json(llm_config_path(uid)) if llm_config_path(uid).exists() else {}
+    if not cfg.get("api_key"):
+        raise HTTPException(400, "请先配置 LLM (embedding 需要 api_key)")
+    try:
+        from rag.indexer import build_index
+        stats = build_index(cfg, PROJECTS_DIR, rag_index_dir(uid))
+        return {"ok": True, "stats": stats}
+    except Exception as e:
+        raise HTTPException(500, f"构建索引失败: {e}")
+
+
+@app.get("/api/rag/status")
+def rag_status(x_user_id: str | None = Header(default=None)) -> dict:
+    """返回 RAG 索引状态（已索引 chunk 数 / 构建时间 / 模型）。"""
+    uid = resolve_user(x_user_id)
+    from rag import store as rag_store
+    meta = rag_store.read_meta(rag_index_dir(uid) / "code_meta.json")
+    chunks = rag_store.read_chunks(rag_index_dir(uid) / "code_chunks.jsonl")
+    return {"count": len(chunks), "built_at": meta.get("built_at", ""), "model": meta.get("model", "")}
+
+
+class PublishReq(BaseModel):
+    content: str          # 飞书 XML blocks
+    title: str = "学习笔记"
+
+
+@app.post("/api/agent/publish-doc")
+def agent_publish_doc(req: PublishReq, x_user_id: str | None = Header(default=None)) -> dict:
+    """把 Agent 生成的文档内容发布到飞书，返回飞书文档 URL。"""
+    url = publish_doc(req.content, req.title)
+    if not url:
+        raise HTTPException(500, "发布失败：请确认已执行 lark-cli auth login")
+    return {"ok": True, "url": url}
 
 
 # ─────────────────────────── 其他板块 ───────────────────────────
