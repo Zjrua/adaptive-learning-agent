@@ -26,3 +26,39 @@ def cosine(a: list[float], b: list[float]) -> float:
     if na == 0.0 or nb == 0.0:
         return 0.0
     return dot / (na * nb)
+
+
+import ast
+
+
+def chunk_source(file: str, source: str) -> list[dict]:
+    """按 AST 把源码切成 chunk：每个顶层 def/class 一个，外加 module 头 docstring。
+    嵌套 def 不单独切（归到所属 class）。返回 [{id, file, symbol, text}]（无 vector）。"""
+    if not source.strip():
+        return []
+    chunks: list[dict] = []
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        # 解析失败的文件整体作为一个 chunk
+        return [{"id": f"{file}::<raw>", "file": file, "symbol": "<raw>", "text": source[:2000]}]
+
+    lines = source.splitlines()
+
+    def text_of(node: ast.AST) -> str:
+        seg = "\n".join(lines[node.lineno - 1: node.end_lineno])
+        return seg
+
+    # module 头 docstring（模块说明）作为独立 chunk
+    if (isinstance(tree, ast.Module) and tree.body
+            and isinstance(tree.body[0], ast.Expr)
+            and isinstance(tree.body[0].value, ast.Constant)
+            and isinstance(tree.body[0].value.value, str)):
+        chunks.append({"id": f"{file}::<module>", "file": file,
+                       "symbol": "<module>", "text": tree.body[0].value.value})
+
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            chunks.append({"id": f"{file}::{node.name}", "file": file,
+                           "symbol": node.name, "text": text_of(node)})
+    return chunks
