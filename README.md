@@ -49,6 +49,35 @@ npm run dev                # http://localhost:5173（代理 /api → :8000）
 
 首次进入：**新用户自动跳初始化**（建用户 → 配模型 → 贴 JD → AI 生成技能树）。已有用户从侧栏底部「⚙️设置」进入。
 
+## AI Agent（工具调用 + RAG + 飞书文档产出）
+
+右下角 ✦ 悬浮按钮打开 **AI 学习助手**——它不是单轮生成器，而是一个会调工具、能检索知识、可产文档的 Agent：
+
+- **工具调用**：自主决定读图谱进度 / 查节点 / 检索知识 / 加节点，混合协议（原生 function calling 优先，指令式回退）
+- **RAG 知识检索**：把 `../projects` 开源项目源码建成向量索引（AST 切 chunk），混合检索（向量 + 图谱 + 论文），带引用编号
+- **ReAct 推理循环**：Planner 意图分流 → Executor 工具循环 → Writer 文档产出，最大 6 步防发散
+- **飞书文档产出**：一键把学习笔记 / 复习卡 / 周报发到飞书
+
+**飞书文档产出配置**（首次使用需登录）：
+
+```bash
+lark-cli auth login        # 按提示完成飞书授权
+lark-cli --version         # 确认已安装（≥1.0.60）
+```
+
+**构建 RAG 知识库索引**（让 Agent 能检索你的开源项目源码；配好 LLM 后）：
+
+```bash
+curl -X POST http://localhost:8000/api/rag/build-index -H "X-User-Id: default"
+curl http://localhost:8000/api/rag/status -H "X-User-Id: default"   # 查索引状态
+```
+
+装 numpy 可加速向量检索（可选，不装也能跑，退化为纯标准库）：
+
+```bash
+pip install numpy
+```
+
 ## 目录结构
 
 ```
