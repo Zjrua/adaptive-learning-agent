@@ -102,3 +102,45 @@ def test_export_all_json(tmp_path: Path):
     data = s.export(session_id=None)
     assert "sessions" in data
     assert len(data["sessions"]) == 2
+
+
+def test_resolve_node_ref(tmp_path: Path):
+    s = _new_store(tmp_path)
+    # graph: 节点列表
+    graph = {"nodes": [{"id": "deepfm", "name": "DeepFM", "category": "特征交叉",
+                         "tasks": [{"title": "读论文"}], "depends_on": ["fm"]}]}
+    refs = s.resolve_refs("#deepfm", graph=graph, dirs=[], resources=[])
+    assert len(refs) == 1
+    assert refs[0]["type"] == "node"
+    assert "DeepFM" in refs[0]["content"]
+
+
+def test_resolve_dir_ref(tmp_path: Path):
+    s = _new_store(tmp_path)
+    dirs = [{"id": "recommendation", "title": "推荐算法", "icon": "🎯", "color": "#4ade80"}]
+    refs = s.resolve_refs("$推荐", graph={"nodes": []}, dirs=dirs, resources=[])
+    assert len(refs) == 1
+    assert refs[0]["type"] == "dir"
+    assert "推荐算法" in refs[0]["content"]
+
+
+def test_resolve_resource_ref(tmp_path: Path):
+    s = _new_store(tmp_path)
+    resources = [{"id": "dssm_paper", "label": "DSSM 论文", "url": "https://arxiv.org/abs/xxx"}]
+    refs = s.resolve_refs("@dssm", graph={"nodes": []}, dirs=[], resources=resources)
+    assert len(refs) == 1
+    assert refs[0]["type"] == "resource"
+
+
+def test_resolve_unknown_returns_empty(tmp_path: Path):
+    s = _new_store(tmp_path)
+    refs = s.resolve_refs("#不存在的节点", graph={"nodes": []}, dirs=[], resources=[])
+    assert refs == []
+
+
+def test_suggest_nodes_by_prefix(tmp_path: Path):
+    s = _new_store(tmp_path)
+    graph = {"nodes": [{"id": "deepfm", "name": "DeepFM"}, {"id": "dcn", "name": "DCN"}]}
+    out = s.suggest("node", "deep", graph=graph, dirs=[], resources=[])
+    assert len(out) == 1
+    assert out[0]["id"] == "deepfm"
