@@ -58,3 +58,47 @@ def test_set_title(tmp_path: Path):
     sid = s.new_session()
     s.set_title(sid, "DeepFM 学习")
     assert s.load()["sessions"][0]["title"] == "DeepFM 学习"
+
+
+def test_search_across_sessions(tmp_path: Path):
+    s = _new_store(tmp_path)
+    s1 = s.new_session()
+    s.set_title(s1, "推荐学习")
+    s.append_message(s1, {"role": "user", "content": "DeepFM 怎么实现", "ts": "x"})
+    s.append_message(s1, {"role": "assistant", "content": "DeepFM 是华为提出", "ts": "x"})
+    s2 = s.new_session()
+    s.set_title(s2, "面试准备")
+    s.append_message(s2, {"role": "user", "content": "DeepFM 面试题", "ts": "x"})
+
+    hits = s.search("DeepFM")
+    assert len(hits) == 3  # 3 条消息命中
+    # 每条带 session_id/title/snippet
+    assert all("session_id" in h and "snippet" in h and "session_title" in h for h in hits)
+    assert any(h["session_title"] == "推荐学习" for h in hits)
+
+
+def test_search_no_match(tmp_path: Path):
+    s = _new_store(tmp_path)
+    s1 = s.new_session()
+    s.append_message(s1, {"role": "user", "content": "你好", "ts": "x"})
+    assert s.search("不存在的内容") == []
+
+
+def test_export_session_json(tmp_path: Path):
+    s = _new_store(tmp_path)
+    s1 = s.new_session()
+    s.set_title(s1, "测试会话")
+    s.append_message(s1, {"role": "user", "content": "hi", "ts": "x"})
+    data = s.export(session_id=s1)
+    assert data["title"] == "测试会话"
+    assert len(data["messages"]) == 1
+    assert data["messages"][0]["content"] == "hi"
+
+
+def test_export_all_json(tmp_path: Path):
+    s = _new_store(tmp_path)
+    s.new_session()
+    s.new_session()
+    data = s.export(session_id=None)
+    assert "sessions" in data
+    assert len(data["sessions"]) == 2
