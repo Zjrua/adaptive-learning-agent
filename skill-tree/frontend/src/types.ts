@@ -97,7 +97,9 @@ export type AgentEvent =
   | { type: 'thinking'; content: string }
   | { type: 'tool_call'; action: string; arguments: Record<string, unknown> }
   | { type: 'tool_result'; action: string; content: string }
-  | { type: 'final_answer'; content: string }
+  | { type: 'final_answer'; content: string }   // 降级兜底（非流式）
+  | { type: 'delta'; content: string }           // 流式逐 token
+  | { type: 'final_done' }                       // 流式结束
   | { type: 'doc_card'; doc_type: string; content: string }
   | { type: 'node_proposal'; node: unknown }
   | { type: 'error'; content: string }
@@ -106,5 +108,36 @@ export type AgentEvent =
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  ts?: string             // 时间戳
   events?: AgentEvent[]   // 助手消息可附带的工具/思考/卡片事件
+}
+
+// ── 多会话 ──
+export interface ChatSession {
+  id: string
+  title: string
+  created_at: string
+  updated_at: string
+  messages: ChatMessage[]
+}
+
+export interface ChatHistory {
+  sessions: ChatSession[]
+  current_session_id: string | null
+  updated_at?: string
+}
+
+export interface SearchHit {
+  session_id: string
+  session_title: string
+  message_index: number
+  role: string
+  snippet: string
+}
+
+export interface RefResolve {
+  type: 'node' | 'dir' | 'resource'
+  id: string
+  name: string
+  content: string
 }

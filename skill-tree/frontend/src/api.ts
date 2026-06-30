@@ -1,4 +1,4 @@
-import type { Graph, Profile, Template, Fruit, AgentEvent } from './types'
+import type { Graph, Profile, Template, Fruit, AgentEvent, ChatHistory, ChatSession, SearchHit } from './types'
 
 const BASE = ''   // 同源(开发走 vite proxy /api → :8000)
 
@@ -105,4 +105,17 @@ export const api = {
 
   buildIndex: () => postJson<{ ok: boolean; stats: unknown }>('/api/rag/build-index', {}),
   ragStatus: () => getJson<{ count: number; built_at: string; model: string }>('/api/rag/status'),
+
+  // ── Chat 多会话管理 ──
+  chatHistory: () => getJson<ChatHistory>('/api/chat/history'),
+  chatSync: (sessions: ChatSession[], currentSessionId: string | null) =>
+    postJson<{ ok: boolean }>('/api/chat/sync', { sessions, current_session_id: currentSessionId }),
+  chatTitle: (message: string) =>
+    postJson<{ title: string }>('/api/chat/title', { message }),
+  chatSearch: (q: string) => getJson<{ hits: SearchHit[] }>(`/api/chat/search?q=${encodeURIComponent(q)}`),
+  chatExport: (sessionId: string | null) =>
+    getJson<unknown>(`/api/chat/export${sessionId ? `?session_id=${sessionId}` : ''}`),
+  chatResolve: (refs: string) => getJson<{ resolved: { type: string; id: string; name: string; content: string }[] }>(`/api/chat/resolve?refs=${encodeURIComponent(refs)}`),
+  chatSuggest: (type: string, q: string) =>
+    getJson<{ items: { id: string; name: string }[] }>(`/api/chat/suggest?type=${type}&q=${encodeURIComponent(q)}`),
 }
