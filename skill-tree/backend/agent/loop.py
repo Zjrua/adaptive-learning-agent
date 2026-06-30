@@ -66,7 +66,10 @@ def _after(text: str, marker: str) -> str:
 
 # 默认 chat_fn：真实工具调用协议
 def _default_chat(cfg, messages, tools, stream=False):
-    from agent.protocol import chat_with_tools
+    from agent.protocol import chat_with_tools, chat_stream
+    if stream:
+        # 流式：返回迭代器，逐 token yield {type:delta}
+        return chat_stream(cfg, messages, tools)
     res = chat_with_tools(cfg, messages, tools)
     return res
 
