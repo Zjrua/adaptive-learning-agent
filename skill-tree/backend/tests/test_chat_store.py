@@ -117,11 +117,21 @@ def test_resolve_node_ref(tmp_path: Path):
 
 def test_resolve_dir_ref(tmp_path: Path):
     s = _new_store(tmp_path)
-    dirs = [{"id": "recommendation", "title": "推荐算法", "icon": "🎯", "color": "#4ade80"}]
-    refs = s.resolve_refs("$推荐", graph={"nodes": []}, dirs=dirs, resources=[])
+    # dirs 带 nodes（新逻辑展开节点+进度）
+    dirs = [{"id": "agent", "title": "AI Agent", "icon": "🤖", "color": "#a78bfa",
+             "nodes": [
+                 {"id": "transformer", "name": "Transformer", "state": "done", "pct": 100, "depends_on": []},
+                 {"id": "react", "name": "ReAct 范式", "state": "locked", "pct": 0, "depends_on": ["transformer"]},
+             ]}]
+    refs = s.resolve_refs("$agent", graph={"nodes": []}, dirs=dirs, resources=[])
     assert len(refs) == 1
     assert refs[0]["type"] == "dir"
-    assert "推荐算法" in refs[0]["content"]
+    content = refs[0]["content"]
+    assert "AI Agent" in content
+    assert "Transformer" in content           # 展开了节点
+    assert "ReAct 范式" in content
+    assert "可推进的下一步" in content         # react 前置 transformer done → 可推进
+    assert "ReAct 范式" in content.split("可推进的下一步")[1]
 
 
 def test_resolve_resource_ref(tmp_path: Path):

@@ -130,8 +130,27 @@ class ChatStore:
             elif sym == "$":
                 for d in dirs:
                     if key in d.get("id", "").lower() or key in d.get("title", "").lower():
+                        # 展开该方向所有节点 + 进度 + 下一步建议
+                        nodes = d.get("nodes", [])
+                        lines = [f"[方向] {d.get('title')} {d.get('icon','')}"]
+                        if nodes:
+                            lines.append("节点进度：")
+                            ready = []  # 前置已满足可推进的 locked 节点
+                            for n in nodes:
+                                state = n.get("state", "locked")
+                                pct = n.get("pct", 0)
+                                lines.append(f"- {n.get('name','?')} ({state}, {pct}%)")
+                                if state == "locked":
+                                    deps = n.get("depends_on", [])
+                                    # 前置全部 done/learning 视为可推进
+                                    dep_nodes = {x.get("id"): x for x in nodes}
+                                    if all(dep_nodes.get(dep, {}).get("state") in ("done", "learning")
+                                           for dep in deps if dep in dep_nodes):
+                                        ready.append(n.get("name", n.get("id")))
+                            if ready:
+                                lines.append(f"可推进的下一步：{', '.join(ready[:5])}")
                         out.append({"type": "dir", "id": d.get("id"), "name": d.get("title"),
-                                    "content": f"[方向] {d.get('title')} {d.get('icon','')}"})
+                                    "content": "\n".join(lines)})
                         break
             elif sym == "@":
                 for r in resources:

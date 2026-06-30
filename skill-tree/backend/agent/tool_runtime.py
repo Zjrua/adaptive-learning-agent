@@ -20,6 +20,7 @@ class Context:
     resume: dict | None              # 简历素材
     retriever: Any                   # rag.retriever.Retriever 实例（或 None）
     rag_index_dir: Any               # Path（论文缓存用）
+    trees: list = None               # 原始树数据（含 branches，供 get_direction 用）# type: ignore
 
 
 def execute_tool(name: str, args: dict, ctx: Context) -> str:
@@ -66,6 +67,37 @@ def _get_next(args, ctx):
     return f"{nid} 暂无明确下游节点，可考虑补充。"
 
 
+def _get_direction(args, ctx):
+    """查某方向所有节点 + 进度 + 下一步建议。dir_id 支持模糊匹配 id/title。"""
+    did = (args.get("dir_id") or "").lower()
+    trees = ctx.trees or []
+    target = None
+    for t in trees:
+        if did in (t.get("tree_id", "").lower()) or did in t.get("title", "").lower():
+            target = t
+            break
+    if not target:
+        return f"未找到方向 {did}。"
+    import progress as _P
+    lines = [f"方向：{target.get('title')} {target.get('icon','')}"]
+    nodes = []
+    for b in target.get("branches", []):
+        for n in b.get("nodes", []):
+            m, tot, pct = _P.node_mastery(n)
+            nodes.append({"id": n.get("id"), "name": n.get("name"),
+                          "state": _P.node_status(n), "pct": pct,
+                          "depends_on": n.get("depends_on", [])})
+            lines.append(f"- {n.get('name')} ({nodes[-1]['state']}, {pct}%)")
+    # 下一步：locked 但前置已满足
+    node_map = {n["id"]: n for n in nodes}
+    ready = [n["name"] for n in nodes if n["state"] == "locked"
+             and all(node_map.get(d, {}).get("state") in ("done", "learning")
+                     for d in n["depends_on"] if d in node_map)]
+    if ready:
+        lines.append(f"可推进的下一步：{', '.join(ready[:5])}")
+    return "\n".join(lines)
+
+
 def _search_knowledge(args, ctx):
     if not ctx.retriever:
         return "（知识库未就绪，请先构建索引）"
@@ -102,6 +134,7 @@ _REGISTRY = {
     "get_progress": _get_progress,
     "get_node": _get_node,
     "get_next": _get_next,
+    "get_direction": _get_direction,
     "search_knowledge": _search_knowledge,
     "add_node": _add_node,
     "add_tasks": _add_tasks,

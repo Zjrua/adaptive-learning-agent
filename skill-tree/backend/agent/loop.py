@@ -95,15 +95,23 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
     sys_e = render_executor(tools_text=tool_schema_text(tools), graph_summary=graph_summary)
     # 引用预处理：解析用户消息里的 #/@/$ 并注入上下文
     refs_text = ""
+    has_dir_ref = False   # 是否有 $方向 引用（需聚焦）
     if hasattr(ctx, "resolve_refs_fn") and ctx.resolve_refs_fn:
         refs = extract_refs(user_input)
         if refs:
             refs_str = " ".join(f"{s}{k}" for s, k in refs)
+            has_dir_ref = any(s == "$" for s, _ in refs)
             try:
                 resolved = ctx.resolve_refs_fn(refs_str)
                 refs_text = "\n".join(r.get("content", "") for r in resolved)
             except Exception:
                 refs_text = ""
+    # 有 $方向 引用时，加聚焦指令，避免模型跑偏到其他方向
+    if has_dir_ref:
+        dir_names = ", ".join(k for s, k in extract_refs(user_input) if s == "$")
+        refs_text = (refs_text + f"\n\n【重要】用户聚焦于「{dir_names}」方向，"
+                     f"请只围绕该方向的节点和进度回答，不要扯到其他学习方向。"
+                     f"若需查该方向详情，调用 get_direction 工具。")
     sys_e = inject_refs(sys_e, refs_text)
     messages = [{"role": "system", "content": sys_e}, {"role": "user", "content": user_input}]
 

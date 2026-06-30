@@ -438,7 +438,7 @@ def _build_ctx(uid: str) -> tuple[agent_tool.Context, dict]:
         return False
 
     ctx = agent_tool.Context(uid=uid, graph=graph, resume=resume,
-                             retriever=retriever, rag_index_dir=rag_index_dir(uid))
+                             retriever=retriever, rag_index_dir=rag_index_dir(uid), trees=trees)
     ctx.on_toggle = on_toggle  # type: ignore[attr-defined]
     return ctx, cfg
 
@@ -572,10 +572,21 @@ def chat_resolve(refs: str, x_user_id: str | None = Header(default=None)) -> dic
     uid = resolve_user(x_user_id)
     trees = load_trees(user_dir(uid))
     lay = layout_mod.compute_layout(trees)
-    # dir_order 已是 [{id,title,icon,color,subtitle}] 格式
-    dirs = lay["dir_order"]
     graph = {"nodes": lay["nodes"]}
     resources = _collect_resources(trees)
+    # dirs 带上每个方向的节点 + state + pct（供 $ 引用展开）
+    dirs = []
+    for t in trees:
+        dir_nodes = []
+        for b in t.get("branches", []):
+            for n in b.get("nodes", []):
+                m, tot, pct = progress_mod.node_mastery(n)
+                dir_nodes.append({"id": n.get("id"), "name": n.get("name"),
+                                  "state": progress_mod.node_status(n), "pct": pct,
+                                  "depends_on": n.get("depends_on", [])})
+        dirs.append({"id": t.get("tree_id"), "title": t.get("title", ""),
+                     "icon": t.get("icon", ""), "color": t.get("color", ""),
+                     "nodes": dir_nodes})
     return {"resolved": chat_store(uid).resolve_refs(refs, graph, dirs, resources)}
 
 
