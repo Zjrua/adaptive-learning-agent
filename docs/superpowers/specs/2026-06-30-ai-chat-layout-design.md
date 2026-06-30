@@ -1,8 +1,8 @@
-# 设计文档：AI 对话区改造（独立常驻 + 记忆 + Markdown）
+# 设计文档：AI 对话区改造（独立常驻 + 多会话 + 流式 + Markdown）
 
 - **日期**：2026-06-30
 - **状态**：待实现
-- **范围**：把 AI 从右下角临时悬浮 FAB 改造为系统一等公民——响应式独立对话区（桌面三栏常驻 / 移动独立页）、对话历史前后端双写持久化、Markdown 渲染。
+- **范围**：把 AI 从右下角临时悬浮 FAB 改造为系统一等公民——响应式独立对话区（桌面三栏常驻 / 移动独立页）、多会话管理（`/new` + 历史切换）、跨会话搜索与导出、全链路真流式 token 渲染、Markdown 渲染。
 
 ---
 
@@ -11,221 +11,269 @@
 ### 1.1 现状
 
 `AgentChat.tsx` 当前是右下角悬浮 FAB 弹出的小窗：
-- 对话记录用 `useState` 持有，**关掉 FAB 或刷新即丢失**。
-- 挤在屏幕角落，空间局促。
-- AI 是整个系统里唯一的「浮窗孤岛」——其他功能（技能树/个人信息/简历模板/果实）都是侧栏导航下的一等 panel 页面，唯独 AI 游离在外。
-- `final_answer` 是纯文本，Agent 返回的 markdown（标题/列表/代码块）原样显示。
+- 对话记录用 `useState` 持有，关掉 FAB 或刷新即丢失。
+- 单一会话，无法开新对话或回看历史。
+- 挤在屏幕角落，AI 是系统里唯一的「浮窗孤岛」，与其他侧栏 panel 范式不一致。
+- `final_answer` 是一次性整段纯文本，Agent 返回的 markdown 原样显示，无流式逐字效果。
 
 ### 1.2 目标
 
-三个诉求：
-1. **对话有记录、能持久化**：关窗/刷新不丢，跨设备同步。
-2. **AI 独立成系统一等公民**：不再是角落浮窗，而是右侧永远常驻的独立交互部分，与侧栏各板块平级。
-3. **Markdown 渲染**：标题/列表/代码块/引用/表格正确呈现，符合玉青宝石工坊美学。
+五个诉求：
+1. **AI 独立成系统一等公民**：右侧永远常驻的独立交互部分（桌面三栏），与侧栏各板块平级。
+2. **对话持久化**：关窗/刷新不丢，跨设备同步。
+3. **多会话**：`/new` 命令开新会话 + 顶部下拉切换历史会话。
+4. **跨会话搜索 + 导出**：搜全部历史会话，命中可跳转；支持导出。
+5. **全链路真流式**：从 LLM 流式输出 → SSE → 前端逐字渲染。
+6. **Markdown 渲染**：标题/列表/代码块/引用/表格正确呈现，符合玉青宝石工坊美学。
 
 ### 1.3 设计决策（已与用户确认）
 
 | 决策点 | 选择 | 理由 |
 |---|---|---|
-| 布局形态 | **响应式**：桌面三栏（侧栏+主区+常驻 AI 窗口）；移动端 AI 作侧栏独立项（🤖）切全屏页 | 桌面边用边问、移动不挤压 |
-| 对话持久化 | **前后端双写**：后端 `chat_history.json` 权威 + 前端 localStorage 缓存 | 跨设备同步 + 首屏快 |
-| Markdown | **marked + DOMPurify + highlight.js** | 业界标准、安全、生态好 |
+| 布局形态 | 响应式：桌面三栏（侧栏+主区+常驻 AI 窗口）；移动端 AI 作侧栏独立项切全屏页 | 桌面边用边问、移动不挤压 |
+| 对话持久化 | 前后端双写：后端权威 + 前端 localStorage 缓存 | 跨设备同步 + 首屏快 |
+| 多会话组织 | 单一活跃会话 + `/new` 开新会话 + 顶部下拉切历史 | 轻量、符合 chat 习惯 |
+| 搜索范围 | 跨所有会话 | 配合多会话最实用 |
+| 导出 | 支持导出（Markdown 文件） | 配合搜索 |
+| 流式 | 全链路真流式（LLM 流式 → SSE delta → 逐字渲染） | 体验最好、面试讲完整链路 |
+| Markdown | marked + DOMPurify + highlight.js | 业界标准、安全、生态好 |
 
 ## 2. 总体布局（核心）
 
 ### 2.1 桌面端（≥820px）：三栏，AI 永远常驻
 
 ```
-┌─侧栏─┬────主区(随侧栏导航变)────┬──AI常驻窗口──┐
-│ 🌳   │                          │ ✦ AI助手  ◂ │ ← 可折叠
-│ 👤   │  当前板块内容:            │ ─────────── │
-│ 📄   │  · #tree → 知识图谱 DAG   │ [用户]      │
-│ 🍎   │  · #profile → 个人信息    │ 我学到哪了  │
-│      │  · #templates → 简历模板  │             │
-│      │  · #fruit → 果实展示      │ [助手] 💭   │
-│      │                          │ 🔧get_progress│
-│      │  ← 切换侧栏,主区变,       │ 你整体45%…  │
-│ ⚙️   │    但 AI 右栏不动!        │             │
-│ 45%  │                          │ ─────────── │
-└──────┴──────────────────────────┤ [输入框][▸] │
-                                  └─────────────┘
+┌─侧栏─┬────主区(随侧栏导航变)────┬──AI常驻窗口──────┐
+│ 🌳   │                          │ ▾ 主题·14:30  ◂ │ ← 会话下拉+折叠
+│ 👤   │  当前板块内容:            │ ─────────────── │
+│ 📄   │  · #tree → 知识图谱 DAG   │ 🔍 搜索  ⤓导出 │ ← 工具条
+│ 🍎   │  · #profile → 个人信息    │ ─────────────── │
+│      │  · #templates → 简历模板  │ [用户]          │
+│      │  · #fruit → 果实展示      │ 我学到哪了      │
+│      │                          │                 │
+│      │  ← 切换侧栏,主区变,       │ [助手] 💭       │
+│ ⚙️   │    但 AI 右栏不动!        │ 🔧get_progress  │
+│ 45%  │                          │ 你整·体·45%… ▌ │ ← 流式逐字
+└──────┴──────────────────────────┤ ─────────────── │
+                                  │ [输入框][/new]▸ │
+                                  └─────────────────┘
 ```
 
-**关键**：`<App>` 的 grid 从 `256px 1fr` 变成 `256px 1fr clamp(320px, 28vw, 440px)`。AI 栏是 App 的**直接子元素**，不嵌在任何路由 panel 内——切换侧栏板块时它纹丝不动，对话记录天然保留（组件不随路由 unmount）。
+**关键**：`<App>` 的 grid 从 `256px 1fr` 变成 `256px 1fr clamp(320px, 28vw, 440px)`。AI 栏是 App 的**直接子元素**，不嵌在任何路由 panel 内——切换侧栏板块时它纹丝不动。
 
-- **可折叠**：AI 栏顶部 ◂ 按钮收成一条窄边（只留 ✦ 图标），点开恢复。折叠状态用 localStorage 记忆。
-- **宽度**：`clamp(320px, 28vw, 440px)`，技能树区自适应剩余。
+- **可折叠**：顶部 ◂ 收成窄边（只留 ✦），点开恢复，状态记 localStorage。
+- **AI 栏内部三段**：顶部工具条（会话下拉 + 搜索 + 导出 + 折叠）/ 中间消息流 / 底部输入框。
 
-### 2.2 移动端（<820px）：AI 作侧栏独立项，切全屏页
+### 2.2 移动端（<820px）：AI 作侧栏独立项
 
 ```
 ┌─侧栏(横向)──────────────────────────────────┐
-│ 🌳技能树  👤信息  📄模板  🍎果实  🤖AI  ⚙️   │  ← 🤖 加进侧栏导航
+│ 🌳技能树  👤信息  📄模板  🍎果实  🤖AI  ⚙️   │  ← 🤖 切 #chat
 └──────────────────────────────────────────────┘
-点 🤖 → 全屏 chat 页面(#chat)
-点其他 → 对应板块,桌面常驻栏不显示
+点 🤖 → 全屏 chat 页面(含工具条/消息流/输入框)
 ```
-
-移动端空间有限，AI 退成独立页面；桌面端的常驻栏在移动端不渲染。
 
 ### 2.3 一个组件两种容器
 
-`<AgentChat>` 组件逻辑不变，靠 CSS 控制父容器：
-- 桌面：挂在 App 右栏（常驻，class `ai-dock`）
-- 移动：挂在 `#chat` 路由的 panel（全屏，class `ai-page`）
+`<AgentChat>` 组件逻辑不变，靠 CSS 控制父容器：桌面挂在 App 右栏（class `ai-dock`），移动挂在 `#chat` 路由（class `ai-page` 全屏）。
 
 ## 3. 路由与导航
 
-### 3.1 侧栏导航
+- **桌面侧栏**：保持 4 项（🌳👤📄🍎）+ 设置。**不加 🤖**——AI 栏永远常驻。
+- **移动端横向侧栏**：多一个 🤖AI 项，切 `#chat` 全屏页。
+- **删除旧 FAB**：移除右下角悬浮 ✦ 按钮及相关逻辑。
+- 路由：`#tree`(默认) / `#profile` / `#templates` / `#fruit` / `#chat`(移动端) / `#setup` / `#settings`。
 
-侧栏导航按断点区分：
-- **桌面侧栏**：保持 4 项（🌳👤📄🍎）+ 设置。**不加 🤖 项**——因为 AI 栏永远常驻在右侧，无需导航切换。
-- **移动端横向侧栏**：多一个 🤖AI 项，点它切到 `#chat` 全屏页（移动端无常驻栏，只能这样进 AI）。
+## 4. 多会话管理
 
-```
-路由: #tree(默认) / #profile / #templates / #fruit / #chat(移动端用) / #setup / #settings
-#chat 路由在桌面端也可访问(切到纯对话全屏),但主要服务移动端
-```
+### 4.1 数据模型
 
-### 3.2 AI 在不同断点/路由下的行为
-
-| 断点 | AI 渲染位置 | 切换侧栏板块时 |
-|---|---|---|
-| 桌面 (≥820px) | App 右栏常驻（所有路由都在） | AI 栏不动，对话保留 |
-| 移动 (<820px) | 仅 `#chat` 路由全屏 | 离开 `#chat` 即隐藏 |
-
-### 3.3 删除旧 FAB
-
-移除 App 里的右下角悬浮 ✦ 按钮及其相关逻辑（`showAi` state、`.ai-fab` 样式）。
-
-## 4. 对话记忆（前后端双写）
-
-### 4.1 数据流
-
-```
-用户发消息
-   │
-   ▼
-AgentChat (前端) ──乐观更新 UI──▶ 立即显示用户气泡
-   │
-   ├──▶ POST /api/agent/chat (SSE) ──▶ 后端 Agent loop
-   │                                       │
-   │   ◀── SSE 事件流 (thinking/tool/final/done)
-   │                                       │
-   ▼                                       ▼
-事件累加到 messages                   后端 loop 结束
-   │                                       │
-   ▼                                       ▼
-done 事件后                          POST /api/chat/sync
-   │                                 (前端发回完整对话,后端覆盖存)
-   ▼                                       │
-localStorage 写入 chat_<uid>               │
-(缓存,加速首屏)                             ▼
-                                   data/users/<uid>/chat_history.json
-```
-
-### 4.2 后端存储格式
-
-`data/users/<uid>/chat_history.json`：
+对话从单一对象升级为「会话列表」：
 
 ```json
+// data/users/<uid>/chat_history.json
 {
-  "messages": [
-    {"role":"user","content":"我学到哪了","ts":"2026-06-30T14:00:00"},
-    {"role":"assistant","content":"你整体45%…","events":[…],"ts":"2026-06-30T14:00:05"},
+  "sessions": [
+    {
+      "id": "s_1719700000",
+      "title": "DeepFM 学习",          // 首条用户消息截断生成
+      "created_at": "2026-06-30T14:00:00",
+      "updated_at": "2026-06-30T14:30:00",
+      "messages": [
+        {"role":"user","content":"…","ts":"…"},
+        {"role":"assistant","content":"…","events":[…],"ts":"…"}
+      ]
+    },
     ...
   ],
-  "updated_at": "2026-06-30T14:01:00"
+  "current_session_id": "s_1719700000",
+  "updated_at": "2026-06-30T14:30:00"
 }
 ```
 
-### 4.3 新增端点
+### 4.2 会话操作
 
-- `GET /api/chat/history` → 返回 `{messages, updated_at}`（首屏加载，后端权威）。
-- `POST /api/chat/sync` → body `{messages}`，后端覆盖写 `chat_history.json`，返回 `{ok}`。
+| 操作 | 触发 | 行为 |
+|---|---|---|
+| 新建会话 | 输入 `/new` 或点「+ 新会话」 | 当前会话归档，创建空会话设为 current |
+| 切换会话 | 顶部下拉点历史项 | current_session_id 切换，加载该会话消息 |
+| 自动标题 | 首条用户消息 | 取前 20 字作 title |
+| 删除会话 | 下拉项旁的 ✕ | 从 sessions 移除 |
 
-### 4.4 前端缓存策略
+### 4.3 命令系统（`/new` 起步）
 
-- **首屏**：先读 localStorage `chat_<uid>` 秒开 → 再 `GET /api/chat/history` 校正（后端权威，覆盖本地）。
-- **每轮 done 后**：更新 localStorage + `POST /api/chat/sync`。
-- **失败处理**：sync 失败不阻塞（本地仍保留），下次重试；网络错误时 UI 仍可用。
-- **用户切换**：`onUserChanged` 时清 localStorage 缓存 key，重拉。
+输入框识别 `/` 开头的命令：
+- `/new` → 新建会话
+- （预留扩展：`/clear`、`/export` 等未来可加）
 
-### 4.5 面试讲法
+命令不发给 LLM，前端本地处理。
 
-前后端双写、后端权威源 + 前端缓存降低首屏延迟、乐观更新提升体验、最终一致（sync 失败可重试不丢数据）。
+## 5. 跨会话搜索与导出
 
-## 5. Markdown 渲染
+### 5.1 搜索
 
-### 5.1 组件
+- **入口**：AI 栏工具条 🔍 按钮 → 展开搜索框。
+- **范围**：跨所有历史会话的消息（user + assistant content）。
+- **实现**：后端 `GET /api/chat/search?q=xxx` 遍历 sessions 做子串匹配（数据量小，无需全文索引），返回 `[{session_id, session_title, message_index, snippet, role}]`。
+- **结果展示**：下拉列表，每条显示会话标题 + 命中片段（高亮）+ 来源。点击 → 切换到该会话并滚动到该消息。
 
-新建 `Markdown.tsx`，封装 `marked` + `DOMPurify` + `highlight.js`：
+### 5.2 导出
 
-```tsx
-// ChatMessage 里 final_answer 和 DocCard 预览都用它
-<Markdown content={msg.content} />
-// 内部: marked.parse(content) → DOMPurify.sanitize(html) → dangerouslySetInnerHTML
-// 代码块: highlight.js 自动高亮(只引常用语言包控体积)
+- **入口**：工具条 ⤓ 按钮。
+- **范围**：导出当前会话（默认）或全部会话（可选）。
+- **格式**：Markdown 文件（`会话标题.md`），含完整对话 + 工具调用记录。
+- **实现**：后端 `GET /api/chat/export?session_id=xxx&all=false` 返回 `text/markdown`，前端触发下载（Blob + a.download）。
+
+## 6. 全链路真流式
+
+### 6.1 流式链路
+
+```
+LLM 流式 API (stream:true)
+   │  逐 token delta
+   ▼
+agent/protocol.py chat_stream()  ← 已存在(T9 实现),逐 chunk yield {type:delta}
+   │
+   ▼
+agent/loop.py run_agent()  ← 改造:Executor 的最终回答用流式产出
+   │  yield SSE 事件
+   ▼
+/api/agent/chat (SSE)  ← 已存在
+   │  data: {type: "delta", content: "你"}
+   │  data: {type: "delta", content: "整体"}
+   ▼
+AgentChat 前端  ← 改造:delta 事件逐字追加到当前 assistant 消息
+   │  实时渲染 + Markdown 流式解析
 ```
 
-### 5.2 安全
+### 6.2 loop 改造点
 
-`marked` 默认不转义 HTML，**必须配 DOMPurify.sanitize** 防 XSS。highlight.js 只引入 `common` 语言包（约 10 种）控制体积，避免全量引入。
+当前 `run_agent` 在 Executor 拿到 `Final Answer` 后一次性 `yield {"type":"final_answer","content":...}`。改造为：
+- 检测到 Final Answer 时，**用 `chat_stream` 重新流式生成**该回答（或让 Executor 的 LLM 调用本身就是流式）。
+- 逐 token `yield {"type":"delta","content":token}`，最后 `yield {"type":"final_done"}`。
+- 工具调用阶段（Thought/Action/Observation）保持非流式（工具调用结构需完整解析，不适合流式）。
 
-### 5.3 样式融入美学（玉青宝石工坊）
+**简化策略（推荐）**：Executor 的 ReAct 循环非流式跑完工具调用；当判定要给最终回答时，发起一次**流式 LLM 调用**专门产出最终回答，逐字 yield。这样工具调用的可靠性 + 最终回答的流式体验兼得。
 
-新增 `.md` 样式块，渲染出的 markdown 符合既有调色板：
+### 6.3 前端流式渲染
+
+- 收到 `delta` 事件 → 追加到当前 assistant 消息的 content。
+- **流式过程中用纯文本快速渲染**（避免每个 token 都跑 marked 解析卡顿）。
+- 收到 `final_done` → 跑一次完整 Markdown 解析渲染最终效果。
+- 流式时显示光标 `▌`。
+
+## 7. 对话记忆（前后端双写）
+
+### 7.1 数据流
+
+```
+用户发消息 → AgentChat 乐观更新 UI → POST /api/agent/chat (SSE)
+                │                              │
+                │   ◀── SSE 事件流(delta/tool/final_done)
+                ▼                              ▼
+            前端 messages 累加         后端 Agent loop
+                │
+                ▼
+        final_done 后 → 更新 localStorage + POST /api/chat/sync (双写)
+```
+
+### 7.2 端点（含多会话/搜索/导出）
+
+| 端点 | 方法 | 作用 |
+|---|---|---|
+| `/api/chat/history` | GET | 返回 `{sessions, current_session_id}`（首屏加载） |
+| `/api/chat/sync` | POST | body `{sessions, current_session_id}`，覆盖存储 |
+| `/api/chat/search?q=` | GET | 跨会话搜索，返回命中列表 |
+| `/api/chat/export?session_id=&all=` | GET | 导出 Markdown，返回 `text/markdown` |
+| `/api/agent/chat` | POST(SSE) | 已有，改流式 delta 事件 |
+
+### 7.3 前端缓存
+
+- 首屏：读 localStorage `chat_<uid>` 秒开 → `GET /api/chat/history` 校正（后端权威）。
+- 每轮 final_done：更新 localStorage + `POST /api/chat/sync`。
+- 用户切换：清缓存 key 重拉。
+
+## 8. Markdown 渲染
+
+### 8.1 组件
+
+新建 `Markdown.tsx`：`marked.parse` → `DOMPurify.sanitize` → `dangerouslySetInnerHTML`；代码块 highlight.js 高亮（只引 common 语言包控体积）。
+
+### 8.2 安全
+
+marked 默认不转义 HTML，**必须 DOMPurify.sanitize** 防 XSS。
+
+### 8.3 样式（玉青宝石工坊）
 
 | 元素 | 样式 |
 |---|---|
-| `h1/h2/h3` | Fraunces 衬线，玉青色 `--jade`，左侧玉青竖线（复用 `.sb-item.active::before` 视觉语言） |
+| `h1/h2/h3` | Fraunces 衬线，玉青色，左侧玉青竖线 |
 | 行内 `code` | JetBrains Mono，`--moss-2` 底，玉青文字 |
-| ` ``` 代码块 ``` ` | 深墨底 `--ink-2` + 玉青边框 `--glass-border` + 左侧色带 + highlight.js 高亮 |
+| ` ``` 代码块 ``` ` | 深墨底 + 玉青边框 + 左侧色带 + highlight.js |
 | `blockquote` | 左玉青竖线 + `--fg-dim` 斜体 |
-| `ul/li` | 玉青圆点 `--jade` |
-| `table` | 玉青表头底 `--moss-2`，玉青边框 |
-| `a` | 玉青色 + 下划线 |
-| `strong` | `--gold` 金芽色强调 |
+| `ul/li` | 玉青圆点 |
+| `table` | 玉青表头底，玉青边框 |
+| `strong` | `--gold` 金芽色 |
 
-## 6. 文件改动清单
+## 9. 文件改动清单
 
 ```
 frontend/src/
 ├── AgentChat.tsx      【重写】悬浮窗 → 响应式对话区(常驻 dock / 全屏 page)
-├── ChatMessage.tsx    【改】final_answer 用 <Markdown> 渲染
-├── Markdown.tsx       【新】marked + DOMPurify + highlight.js 封装
-├── api.ts             【改】新增 chatHistory()/chatSync()
-├── types.ts           【改】ChatMessage 加 ts 字段; 新增 ChatHistory 类型
-├── App.tsx            【改】三栏 grid; 侧栏加 🤖(移动); AI 栏常驻; 删 FAB; 加 #chat 路由
-└── index.css          【改】三栏响应式 + .md 样式 + AI 栏样式
+│                          + 会话下拉 + 搜索框 + 导出按钮 + /new 命令 + 流式渲染
+├── ChatMessage.tsx    【改】流式光标 + final_done 后 Markdown 渲染
+├── Markdown.tsx       【新】marked + DOMPurify + highlight.js
+├── ChatToolbar.tsx    【新】AI 栏顶部工具条(会话下拉/搜索/导出/折叠)
+├── api.ts             【改】新增 chatHistory/chatSync/chatSearch/chatExport
+├── types.ts           【改】Session/ChatHistory 类型; ChatMessage 加 ts
+├── App.tsx            【改】三栏 grid; 侧栏加 🤖(移动); AI 栏常驻; 删 FAB; 加 #chat
+└── index.css          【改】三栏响应式 + .md 样式 + AI 栏 + 工具条样式
 
 backend/
-└── main.py            【改】新增 GET /api/chat/history + POST /api/chat/sync
+├── main.py            【改】chat 端点(history/sync/search/export)
+└── agent/loop.py      【改】Executor 最终回答改流式 yield delta
 
 依赖: npm i marked dompurify highlight.js (+ @types)
 ```
 
-## 7. 范围与风险
+## 10. 范围与风险
 
-### 7.1 本次范围（in scope）
+### 10.1 范围（in scope）
 
-- 三栏响应式布局（桌面常驻 AI / 移动独立页）
+- 三栏响应式布局 + 删 FAB
+- 多会话（`/new` + 下拉切换 + 自动标题 + 删除）
+- 跨会话搜索 + 导出（Markdown）
+- 全链路真流式（delta 事件 + 前端逐字渲染 + 流式纯文本/完成后 Markdown）
 - 对话前后端双写持久化
-- Markdown 渲染（marked + DOMPurify + highlight.js）
-- 删除旧 FAB
+- Markdown 渲染
 
-### 7.2 不在范围（out of scope）
-
-- 多会话/多对话切换（当前单一线性对话历史）
-- 对话搜索/导出
-- 流式 token 逐字渲染（当前是 final_answer 一次性，已够用）
-
-### 7.3 风险
+### 10.2 风险
 
 | 风险 | 缓解 |
 |---|---|
-| 三栏在小笔记本（820-1100px）挤压技能树 | AI 栏可折叠 + `clamp` 宽度自适应；用户可收起 |
-| marked 依赖体积 | 只引 highlight.js common 包；marked 本身 ~12KB gzip |
-| 双写不一致（sync 失败） | 后端权威 + 失败重试 + localStorage 兜底，最终一致 |
-| DOMPurify 配置错误致 XSS | sanitize 默认配置已够；代码块经 highlight 转义 |
-| 旧 FAB 删除后用户找不到 AI | 桌面常驻栏始终可见；移动端 🤖 导航项明确 |
+| 三栏在小笔记本挤压 | AI 栏可折叠 + clamp 宽度 |
+| marked/hjs 依赖体积 | 只引 hjs common 包 |
+| 流式 + Markdown 解析卡顿 | 流式时纯文本，final_done 才解析 |
+| 双写不一致 | 后端权威 + 失败重试 + localStorage 兜底 |
+| 全链路流式调试复杂 | 工具调用保持非流式（可靠），仅最终回答流式；保留 final_answer 兜底事件 |
+| 跨会话搜索性能 | 数据量小用子串匹配；未来量大再加索引 |
