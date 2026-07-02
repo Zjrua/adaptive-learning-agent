@@ -74,7 +74,8 @@ def _default_chat(cfg, messages, tools, stream=False):
 
 
 def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
-              cfg: dict | None = None, max_steps: int = 6) -> Iterator[dict]:
+              cfg: dict | None = None, max_steps: int = 6,
+              history: list[dict] | None = None) -> Iterator[dict]:
     cfg = cfg or {}
     tools = TOOLS_EXECUTOR
     graph_summary = _graph_summary(ctx.graph)
@@ -112,7 +113,11 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
                      f"请只围绕该方向的节点和进度回答，不要扯到其他学习方向。"
                      f"若需查该方向详情，调用 get_direction 工具。")
     sys_e = inject_refs(sys_e, refs_text)
-    messages = [{"role": "system", "content": sys_e}, {"role": "user", "content": user_input}]
+    messages = [{"role": "system", "content": sys_e}]
+    for m in (history or []):
+        if m.get("role") in ("user", "assistant") and m.get("content"):
+            messages.append({"role": m["role"], "content": m["content"]})
+    messages.append({"role": "user", "content": user_input})
 
     for step_i in range(max_steps):
         try:

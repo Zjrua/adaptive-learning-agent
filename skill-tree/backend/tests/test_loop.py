@@ -124,3 +124,21 @@ def test_parse_react_final_answer_multiline():
     step = parse_react("Thought: ok\nFinal Answer: 第一行\n第二行")
     assert step["type"] == "final"
     assert "第一行" in step["answer"] and "第二行" in step["answer"]
+
+
+def test_loop_history_is_injected_into_messages():
+    """前端发来的 history 应前置注入 Executor 的 messages。"""
+    fake = FakeChat([
+        {"content": '{"intent":"query","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
+        {"content": "Thought: 够\nFinal Answer: 你上次问的是 DCN。", "tool_calls": []},
+    ])
+    ctx = _ctx()
+    history = [{"role": "user", "content": "DeepFM 学完了"},
+               {"role": "assistant", "content": "建议学 DCN"}]
+    list(run_agent(ctx, "那 DCN 之后呢", chat_fn=fake, cfg={"base_url": "x", "api_key": "y"},
+                   history=history))
+    # 第二次调用(Executor)的 messages 应含 history
+    executor_call = fake.calls[1]
+    roles_content = [(m["role"], m["content"]) for m in executor_call["messages"]]
+    assert ("user", "DeepFM 学完了") in roles_content
+    assert ("assistant", "建议学 DCN") in roles_content

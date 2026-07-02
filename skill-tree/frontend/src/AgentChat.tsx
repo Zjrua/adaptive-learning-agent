@@ -7,7 +7,7 @@ import { MentionInput } from './MentionInput'
 import { DocCard } from './DocCard'
 
 interface Props {
-  variant?: 'dock' | 'page'
+  onClose?: () => void   // 收起 AI 栏（顶栏按钮触发）
 }
 
 const CACHE_KEY = (uid: string) => `chat_${uid}`
@@ -16,7 +16,7 @@ const CACHE_KEY = (uid: string) => `chat_${uid}`
  * AI 对话区：桌面端常驻右侧 dock，移动端 #chat 全屏 page。
  * 多会话(/new + 下拉切换) + 流式渲染(delta) + 双写持久化 + 符号引用。
  */
-export function AgentChat({ variant = 'dock' }: Props) {
+export function AgentChat({ onClose }: Props) {
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [currentId, setCurrentId] = useState<string | null>(null)
   const [input, setInput] = useState('')
@@ -97,7 +97,11 @@ export function AgentChat({ variant = 'dock' }: Props) {
     }
 
     try {
-      await api.agentChatStream(text, (ev: AgentEvent) => {
+      const history = (current?.messages ?? [])
+        .slice(-12)
+        .filter(m => m.content)
+        .map(m => ({ role: m.role, content: m.content }))
+      await api.agentChatStream(text, history, (ev: AgentEvent) => {
         setSessions(prev => {
           const next = prev.map(s => {
             if (s.id !== currentId) return s
@@ -159,10 +163,11 @@ export function AgentChat({ variant = 'dock' }: Props) {
   }
 
   return (
-    <div className={`agent-chat ${variant}`}>
+    <div className="agent-chat">
       <ChatToolbar
         sessions={sessions} currentId={currentId} collapsed={collapsed}
         onToggleCollapse={() => setCollapsed(v => !v)}
+        onClose={onClose}
         onSelectSession={setCurrentId}
         onNewSession={newSession}
         onDeleteSession={deleteSession}

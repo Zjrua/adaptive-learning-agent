@@ -399,6 +399,7 @@ def apply_direction(payload: dict, x_user_id: str | None = Header(default=None))
 # ─────────────────────────── Agent 对话(SSE) ───────────────────────────
 class AgentChatReq(BaseModel):
     message: str
+    history: list = []
 
 
 def _build_ctx(uid: str) -> tuple[agent_tool.Context, dict]:
@@ -462,7 +463,7 @@ def agent_chat(req: AgentChatReq, x_user_id: str | None = Header(default=None)):
         raise HTTPException(400, "请先配置 LLM (api_key)")
 
     def event_stream():
-        for ev in agent_loop.run_agent(ctx, req.message, cfg=cfg):
+        for ev in agent_loop.run_agent(ctx, req.message, cfg=cfg, history=req.history):
             yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream",
