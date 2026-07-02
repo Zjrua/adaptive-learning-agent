@@ -84,8 +84,6 @@ def list_models(base_url: str, api_key: str) -> list[str]:
         raise RuntimeError(f"HTTP {e.code}: {detail}")
     except Exception as e:
         raise RuntimeError(f"获取模型列表失败: {e}")
-    except Exception as e:
-        return False, str(e)
 
 
 # ─────────────────────────── JSON 提取与校验 ───────────────────────────
@@ -155,6 +153,28 @@ def _norm_node(n: Any) -> dict:
     if n.get("verify"):
         out["verify"] = [_norm_task(v) for v in n["verify"]]
     return out
+
+
+def slugify_id(name: str) -> str:
+    """把名字转成合法 node id(小写字母数字下划线)。如 'Light GCN!' → 'light_gcn'。"""
+    s = name.strip().lower()
+    s = re.sub(r"[^a-z0-9]+", "_", s)
+    s = s.strip("_")
+    return s or "node"
+
+
+def validate_node(node: dict) -> tuple[bool, list[str]]:
+    """轻量校验。返回 (ok, [错误信息])。必填:id(非空)、name(非空)、tasks(list)。"""
+    errs = []
+    if not isinstance(node, dict):
+        return False, ["node 不是对象"]
+    if not str(node.get("id", "")).strip():
+        errs.append("缺少 id")
+    if not str(node.get("name", "")).strip():
+        errs.append("缺少 name")
+    if not isinstance(node.get("tasks", None), list):
+        errs.append("tasks 必须是列表")
+    return (len(errs) == 0), errs
 
 
 def _norm_tree(t: Any, fallback_id: str = "gen") -> dict:
