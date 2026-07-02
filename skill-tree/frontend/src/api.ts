@@ -1,4 +1,4 @@
-import type { Graph, Profile, Template, Fruit, AgentEvent, ChatHistory, ChatSession, SearchHit } from './types'
+import type { Graph, Profile, Template, Fruit, AgentEvent, ChatHistory, ChatSession, SearchHit, Provider, LlmConfig } from './types'
 
 const BASE = ''   // 同源(开发走 vite proxy /api → :8000)
 
@@ -27,8 +27,7 @@ async function postJson<T>(url: string, body: any): Promise<T> {
   return text ? JSON.parse(text) : ({} as T)
 }
 
-export interface Provider { id: string; label: string; base_url: string; model: string; json_mode: boolean }
-export interface LlmConfig { provider: string; base_url: string; api_key: string; model: string; configured?: boolean }
+// Provider/LlmConfig 类型已移至 types.ts（api.ts 内部从上方 import type 引用）
 export interface UserInfo { id: string; name: string }
 
 export const api = {
@@ -72,12 +71,13 @@ export const api = {
   // ── Agent 对话(SSE 流式) ──
   agentChatStream(
     message: string,
+    history: { role: 'user' | 'assistant'; content: string }[],
     onEvent: (ev: AgentEvent) => void,
   ): Promise<void> {
     return fetch(BASE + '/api/agent/chat', {
       method: 'POST',
       headers: authHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, history }),
     }).then(async (r) => {
       if (!r.ok) throw new Error(await r.text().catch(() => ''))
       const reader = r.body?.getReader()
