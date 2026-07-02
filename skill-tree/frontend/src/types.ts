@@ -113,7 +113,7 @@ export type AgentEvent =
   | { type: 'final_answer'; content: string }   // 降级兜底（非流式）
   | { type: 'delta'; content: string }           // 流式逐 token
   | { type: 'final_done' }                       // 流式结束
-  | { type: 'doc_card'; doc_type: string; content: string }
+  | { type: 'doc_card'; doc_type: string; content: string; title?: string }
   | { type: 'node_proposal'; mode: 'new_node' | 'add_tasks'; node?: NodeSpec; node_id?: string; tasks?: Task[]; incomplete?: boolean }
   | { type: 'error'; content: string }
   | { type: 'done' }

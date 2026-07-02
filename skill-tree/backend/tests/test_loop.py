@@ -203,3 +203,14 @@ def test_loop_reflect_capped_accepts_second_draft():
     assert any(e["type"] == "final_done" for e in events)   # 不卡死
     full = "".join(e.get("content", "") for e in events if e["type"] == "delta")
     assert "草稿B" in full    # 接受第二次草稿
+
+
+def test_pick_doc_type_by_keyword():
+    """含'复习/背/默写'→review,含'周报/本周/总结'→weekly,否则 note。"""
+    from agent.loop import _pick_doc_type
+    assert _pick_doc_type("帮我生成复习卡") == "review"
+    assert _pick_doc_type("我要背一下 DeepFM 结构") == "review"
+    assert _pick_doc_type("整理本周学习周报") == "weekly"
+    assert _pick_doc_type("做个月度总结") == "weekly"
+    assert _pick_doc_type("整理个 DeepFM 笔记") == "note"
+    assert _pick_doc_type("讲讲 DCN") == "note"

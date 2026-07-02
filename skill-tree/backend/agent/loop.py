@@ -250,15 +250,32 @@ def _history_summary(history: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _pick_doc_type(request: str) -> str:
+    """按用户措辞判定文档类型。"""
+    r = request
+    if any(k in r for k in ("复习", "背", "默写", "review")):
+        return "review"
+    if any(k in r for k in ("周报", "本周", "总结", "weekly")):
+        return "weekly"
+    return "note"
+
+
 def _run_writer(ctx, user_input, executor_messages, chat_fn, cfg) -> Iterator[dict]:
     from agent.prompts import render_writer
+    doc_type = _pick_doc_type(user_input)
     materials = "\n".join(m.get("content", "") for m in executor_messages
                           if m.get("role") == "user" and "Observation" in m.get("content", ""))
-    sys_w = render_writer(materials=materials[:2000], request=user_input)
+    sys_w = render_writer(materials=materials[:2000], request=user_input, doc_type=doc_type)
     try:
         res = chat_fn(cfg, [{"role": "system", "content": sys_w},
-                            {"role": "user", "content": "请生成文档。"}], tools=None)
-        yield {"type": "doc_card", "doc_type": "note", "content": res.get("content", "")}
+                            {"role": "user", "content": f"请生成{doc_type}类型文档。"}], tools=None)
+        content = res.get("content", "")
+        # 标题:取首个 <title>...</title>,否则用类型默认名
+        if "<title>" in content and "</title>" in content:
+            title = content.split("</title>")[0].split("<title>")[-1]
+        else:
+            title = {"note": "学习笔记", "review": "复习卡", "weekly": "周报"}.get(doc_type, "文档")
+        yield {"type": "doc_card", "doc_type": doc_type, "content": content, "title": title}
     except Exception as e:
         yield {"type": "error", "content": f"文档生成失败: {e}"}
 

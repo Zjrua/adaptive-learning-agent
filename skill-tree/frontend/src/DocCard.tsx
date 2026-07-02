@@ -1,15 +1,27 @@
 import { useState } from 'react'
 import { api } from './api'
 
-export function DocCard({ content, onPublished }: { content: string; onPublished: (url: string) => void }) {
+const DOC_TYPE_ICON: Record<string, string> = { note: '📝', review: '🃏', weekly: '📊' }
+const DOC_TYPE_LABEL: Record<string, string> = { note: '学习笔记', review: '复习卡', weekly: '周报' }
+
+export function DocCard({ content, docType, title, onPublished }: {
+  content: string
+  docType?: string
+  title?: string
+  onPublished: (url: string) => void
+}) {
   const [busy, setBusy] = useState(false)
   const [showPreview, setShowPreview] = useState(false)
   const [err, setErr] = useState('')
 
+  const dt = docType || 'note'
+  const icon = DOC_TYPE_ICON[dt] || '📄'
+  const label = title || DOC_TYPE_LABEL[dt] || '文档'
+
   const publish = async () => {
     setBusy(true); setErr('')
     try {
-      const r = await api.publishDoc(content, '学习笔记')
+      const r = await api.publishDoc(content, DOC_TYPE_LABEL[dt] || '学习笔记')
       onPublished(r.url)
     } catch (e: any) { setErr(String(e.message || e)) }
     setBusy(false)
@@ -17,7 +29,7 @@ export function DocCard({ content, onPublished }: { content: string; onPublished
 
   return (
     <div className="doc-card">
-      <div className="doc-card-head">📄 学习文档已生成</div>
+      <div className="doc-card-head">{icon} {label}</div>
       {showPreview && <pre className="doc-preview">{content.slice(0, 800)}</pre>}
       <div className="doc-card-actions">
         <button className="aibtn ghost" onClick={() => setShowPreview(v => !v)}>

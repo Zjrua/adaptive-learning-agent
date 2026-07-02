@@ -184,9 +184,10 @@ export function AgentChat({ onClose }: Props) {
               <div key={i}>
                 <ChatMessageView msg={m}
                   streaming={streaming && i === (current.messages.length - 1) && m.role === 'assistant'} />
-                {m.events?.filter(e => e.type === 'doc_card').map((e, j) => (
-                  <DocCard key={`d${j}`} content={(e as any).content || ''} onPublished={() => {}} />
-                ))}
+                {m.events?.filter(e => e.type === 'doc_card').map((e, j) => {
+                  const ev = e as any
+                  return <DocCard key={`d${j}`} content={ev.content || ''} docType={ev.doc_type} title={ev.title} onPublished={() => {}} />
+                })}
                 {m.events?.filter(e => e.type === 'node_proposal').map((e, j) => {
                   const ev = e as any
                   return <NodeProposalCard key={`n${j}`} mode={ev.mode} node={ev.node} nodeId={ev.node_id}
