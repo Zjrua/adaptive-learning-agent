@@ -31,11 +31,10 @@ def test_parse_react_garbage_returns_final():
 
 
 def test_loop_chat_intent_short_circuits():
-    """Planner 判 chat → 直接走 Executor 一步，不进多步 ReAct。"""
+    """Planner 判 chat → 单步直答，不进 ReAct。"""
     fake = FakeChat([
         {"content": '{"intent":"chat","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
-        {"content": "Thought: 闲聊\nFinal Answer: 你好！加油学算法！", "tool_calls": []},
-        {"content": "你好！加油学算法！", "tool_calls": []},   # 给 _stream_final 的流式响应
+        {"content": "你好！加油学算法！", "tool_calls": []},
     ])
     ctx = _ctx()
     events = list(run_agent(ctx, "你好", chat_fn=fake, cfg={"base_url": "x", "api_key": "y"}))
@@ -52,7 +51,6 @@ def test_loop_tool_step_then_final():
         {"content": '{"intent":"query","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
         {"content": "Thought: 查进度\nAction: get_progress\nArguments: {}", "tool_calls": []},
         {"content": "Thought: 好了\nFinal Answer: 你整体 45%。", "tool_calls": []},
-        {"content": "你整体 45%。", "tool_calls": []},   # 给 _stream_final 的流式响应
     ])
     ctx = _ctx(graph={"nodes": [], "overview": {"overall_pct": 45, "mastered_points": 0, "total_points": 0}})
     events = list(run_agent(ctx, "我学到哪了", chat_fn=fake, cfg={"base_url": "x", "api_key": "y"}))
@@ -142,3 +140,21 @@ def test_loop_history_is_injected_into_messages():
     roles_content = [(m["role"], m["content"]) for m in executor_call["messages"]]
     assert ("user", "DeepFM 学完了") in roles_content
     assert ("assistant", "建议学 DCN") in roles_content
+
+
+def test_loop_chat_short_circuit_no_react():
+    """chat intent → 单步直答,不进 ReAct(无 tool_call 事件)。"""
+    fake = FakeChat([
+        {"content": '{"intent":"chat","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
+        {"content": "你好！学算法能锻炼思维。", "tool_calls": []},
+    ])
+    ctx = _ctx()
+    events = list(run_agent(ctx, "你好", chat_fn=fake, cfg={"base_url": "x", "api_key": "y"}))
+    types = [e["type"] for e in events]
+    assert "thinking" in types
+    assert "delta" in types and "final_done" in types
+    assert not any(e["type"] == "tool_call" for e in events)   # 无工具
+    full = "".join(e["content"] for e in events if e["type"] == "delta")
+    assert "学算法" in full
+    # Executor (chat direct) called once; total calls = Planner(1) + chat direct(1) = 2
+    assert len(fake.calls) == 2
