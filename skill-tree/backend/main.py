@@ -574,15 +574,22 @@ def rag_status(x_user_id: str | None = Header(default=None)) -> dict:
 class PublishReq(BaseModel):
     content: str          # 飞书 XML blocks
     title: str = "学习笔记"
+    wiki_space_id: str | None = None
 
 
 @app.post("/api/agent/publish-doc")
 def agent_publish_doc(req: PublishReq, x_user_id: str | None = Header(default=None)) -> dict:
-    """把 Agent 生成的文档内容发布到飞书，返回飞书文档 URL。"""
-    url = publish_doc(req.content, req.title)
+    """把 Agent 生成的文档发布到飞书(wiki 归档优先),返回 URL + kind。"""
+    space = req.wiki_space_id
+    if not space:
+        uid = resolve_user(x_user_id)
+        lark_cfg_p = user_dir(uid) / "lark_config.json"
+        if lark_cfg_p.exists():
+            space = _load_json(lark_cfg_p).get("wiki_space_id")
+    url, kind = publish_doc(req.content, req.title, wiki_space_id=space)
     if not url:
         raise HTTPException(500, "发布失败：请确认已执行 lark-cli auth login")
-    return {"ok": True, "url": url}
+    return {"ok": True, "url": url, "kind": kind}
 
 
 # ─────────────────────────── Chat 对话管理 ───────────────────────────
