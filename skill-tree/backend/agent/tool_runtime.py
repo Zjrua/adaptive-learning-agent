@@ -13,6 +13,15 @@ class ToolError(Exception):
     pass
 
 
+class ToolResult(dict):
+    """工具执行结果。text=给模型看的文本;events=要 emit 的 SSE 事件(list[dict])。"""
+    pass
+
+
+def _ok(text: str, events: list | None = None) -> ToolResult:
+    return ToolResult(text=text, events=events or [])
+
+
 @dataclass
 class Context:
     uid: str
@@ -23,7 +32,7 @@ class Context:
     trees: list = None               # 原始树数据（含 branches，供 get_direction 用）# type: ignore
 
 
-def execute_tool(name: str, args: dict, ctx: Context) -> str:
+def execute_tool(name: str, args: dict, ctx: Context) -> ToolResult:
     fn = _REGISTRY.get(name)
     if not fn:
         raise ToolError(f"未知工具: {name}")
@@ -42,7 +51,7 @@ def _get_progress(args, ctx):
         parts.append("进行中：" + "、".join(f"{n.get('name')}({n.get('pct',0)}%)" for n in learning[:8]))
     if done:
         parts.append("已点亮：" + "、".join(n.get("name", n.get("id")) for n in done[:8]))
-    return " ".join(parts)
+    return _ok(" ".join(parts))
 
 
 def _get_node(args, ctx):
@@ -50,11 +59,11 @@ def _get_node(args, ctx):
     for n in ctx.graph.get("nodes", []):
         if n.get("id") == nid:
             tasks = n.get("tasks", [])
-            return (f"节点 {n.get('name')}（{n.get('category','')}）"
-                    f"，状态 {n.get('state')}，{n.get('pct',0)}%。"
-                    f"任务：{json.dumps([t.get('title') for t in tasks], ensure_ascii=False)}"
-                    f"。前置：{n.get('depends_on', [])}")
-    return f"未找到节点 {nid}。"
+            return _ok(f"节点 {n.get('name')}（{n.get('category','')}）"
+                       f"，状态 {n.get('state')}，{n.get('pct',0)}%。"
+                       f"任务：{json.dumps([t.get('title') for t in tasks], ensure_ascii=False)}"
+                       f"。前置：{n.get('depends_on', [])}")
+    return _ok(f"未找到节点 {nid}。")
 
 
 def _get_next(args, ctx):
@@ -63,8 +72,8 @@ def _get_next(args, ctx):
     # 反向依赖：谁 depends_on 了 nid
     children = [n.get("name", n.get("id")) for n in nodes if nid in (n.get("depends_on") or [])]
     if children:
-        return f"{nid} 学完后建议：{'、'.join(children)}"
-    return f"{nid} 暂无明确下游节点，可考虑补充。"
+        return _ok(f"{nid} 学完后建议：{'、'.join(children)}")
+    return _ok(f"{nid} 暂无明确下游节点，可考虑补充。")
 
 
 def _get_direction(args, ctx):
@@ -77,7 +86,7 @@ def _get_direction(args, ctx):
             target = t
             break
     if not target:
-        return f"未找到方向 {did}。"
+        return _ok(f"未找到方向 {did}。")
     import progress as _P
     lines = [f"方向：{target.get('title')} {target.get('icon','')}"]
     nodes = []
@@ -95,30 +104,30 @@ def _get_direction(args, ctx):
                      for d in n["depends_on"] if d in node_map)]
     if ready:
         lines.append(f"可推进的下一步：{', '.join(ready[:5])}")
-    return "\n".join(lines)
+    return _ok("\n".join(lines))
 
 
 def _search_knowledge(args, ctx):
     if not ctx.retriever:
-        return "（知识库未就绪，请先构建索引）"
+        return _ok("（知识库未就绪，请先构建索引）")
     hits = ctx.retriever.search(args.get("query", ""), top_k=args.get("top_k", 5),
                                 graph=ctx.graph, resume=ctx.resume)
     if not hits:
-        return "未检索到相关内容。"
-    return "\n".join(f'{h["ref"]} {h.get("source","")}:{h.get("symbol") or h.get("text","")[:60]}'
-                     for h in hits)
+        return _ok("未检索到相关内容。")
+    return _ok("\n".join(f'{h["ref"]} {h.get("source","")}:{h.get("symbol") or h.get("text","")[:60]}'
+                         for h in hits))
 
 
 # ── 写操作（生成建议，不写盘）──
 def _add_node(args, ctx):
     desc = args.get("description", "")
-    return (f"[建议·待确认] 新增节点：{desc}。"
-            f"将生成完整 node（含学习任务/验收）供你审核。返回 proposal。")
+    return _ok(f"[建议·待确认] 新增节点：{desc}。"
+               f"将生成完整 node（含学习任务/验收）供你审核。返回 proposal。")
 
 
 def _add_tasks(args, ctx):
-    return (f"[建议·待确认] 为节点 {args.get('node_id','')} 补充任务：{args.get('description','')}。"
-            f"返回 proposal。")
+    return _ok(f"[建议·待确认] 为节点 {args.get('node_id','')} 补充任务：{args.get('description','')}。"
+               f"返回 proposal。")
 
 
 def _toggle_task(args, ctx):
@@ -126,8 +135,8 @@ def _toggle_task(args, ctx):
     cb = getattr(ctx, "on_toggle", None)
     if cb:
         ok = cb(args.get("tree_id"), args.get("node_id"), args.get("task_id"), args.get("done"))
-        return "已更新。" if ok else "更新失败：未找到该任务。"
-    return "（当前上下文不支持直接勾选）"
+        return _ok("已更新。" if ok else "更新失败：未找到该任务。")
+    return _ok("（当前上下文不支持直接勾选）")
 
 
 _REGISTRY = {

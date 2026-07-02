@@ -154,7 +154,10 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
         args = step.get("arguments", {})
         yield {"type": "tool_call", "action": action, "arguments": args}
         try:
-            observation = execute_tool(action, args, ctx)
+            tresult = execute_tool(action, args, ctx)
+            observation = tresult.get("text", "")
+            for ev in tresult.get("events", []):
+                yield ev
         except Exception as e:
             observation = f"工具执行出错: {e}"
         yield {"type": "tool_result", "action": action, "content": observation}
