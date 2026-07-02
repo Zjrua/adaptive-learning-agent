@@ -158,3 +158,48 @@ def test_loop_chat_short_circuit_no_react():
     assert "学算法" in full
     # Executor (chat direct) called once; total calls = Planner(1) + chat direct(1) = 2
     assert len(fake.calls) == 2
+
+
+def test_loop_reflect_ok_accepts_draft():
+    """Reflect 判 ok=true → 直接接受草稿,不续跑。"""
+    fake = FakeChat([
+        {"content": '{"intent":"query","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
+        {"content": "Thought: x\nFinal Answer: 你整体 45%。", "tool_calls": []},
+        {"content": '{"ok": true, "gap": ""}', "tool_calls": []},
+    ])
+    ctx = _ctx()
+    events = list(run_agent(ctx, "进度", chat_fn=fake, cfg={"base_url": "x", "api_key": "y"}))
+    full = "".join(e.get("content", "") for e in events if e["type"] == "delta")
+    assert "45%" in full
+
+
+def test_loop_reflect_gap_triggers_rerun():
+    """Reflect 判 ok=false → 注入 gap 续跑一轮,再产出更完整答案。"""
+    fake = FakeChat([
+        {"content": '{"intent":"query","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
+        {"content": "Thought: x\nFinal Answer: 建议学 DCN。", "tool_calls": []},          # 草稿
+        {"content": '{"ok": false, "gap": "没说为什么推荐 DCN"}', "tool_calls": []},        # Reflect → not ok
+        {"content": "Thought: 补充\nFinal Answer: 建议 DCN，因为它承接 DeepFM 的特征交叉。", "tool_calls": []},  # 续跑草稿
+        {"content": '{"ok": true, "gap": ""}', "tool_calls": []},                          # 二次 Reflect → ok
+    ])
+    ctx = _ctx()
+    events = list(run_agent(ctx, "下一步学啥,为什么", chat_fn=fake,
+                            cfg={"base_url": "x", "api_key": "y"}))
+    full = "".join(e.get("content", "") for e in events if e["type"] == "delta")
+    assert "特征交叉" in full    # 续跑后的内容被采纳
+
+
+def test_loop_reflect_capped_accepts_second_draft():
+    """Reflect 已用过一次 + 仍不 ok → 接受第二次草稿,不无限续跑。"""
+    fake = FakeChat([
+        {"content": '{"intent":"query","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
+        {"content": "Thought: x\nFinal Answer: 草稿A。", "tool_calls": []},
+        {"content": '{"ok": false, "gap": "x"}', "tool_calls": []},
+        {"content": "Thought: y\nFinal Answer: 草稿B。", "tool_calls": []},
+        {"content": '{"ok": false, "gap": "y"}', "tool_calls": []},   # 二次仍不 ok,但 reflect 已用过
+    ])
+    ctx = _ctx()
+    events = list(run_agent(ctx, "x", chat_fn=fake, cfg={"base_url": "x", "api_key": "y"}))
+    assert any(e["type"] == "final_done" for e in events)   # 不卡死
+    full = "".join(e.get("content", "") for e in events if e["type"] == "delta")
+    assert "草稿B" in full    # 接受第二次草稿

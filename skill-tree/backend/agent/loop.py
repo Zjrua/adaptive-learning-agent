@@ -125,6 +125,8 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
             messages.append({"role": m["role"], "content": m["content"]})
     messages.append({"role": "user", "content": user_input})
 
+    reflect_used = False   # Reflexion 仅允许 1 轮(query/produce)
+
     for step_i in range(max_steps):
         try:
             res = chat_fn(cfg, messages, tools)
@@ -154,11 +156,22 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
 
         if step["type"] == "final":
             answer = step.get("answer", "")
-            if answer and not answer.startswith("（已达到最大"):
-                yield from _emit_text_as_delta(answer)
-                yield {"type": "final_done"}
-            else:
+            if not answer or answer.startswith("（已达到最大"):
                 yield {"type": "final_answer", "content": answer}
+                break
+            # Reflexion(query/produce 才做,仅 1 轮)
+            if intent.get("intent") in ("query", "produce") and not reflect_used:
+                reflect_used = True   # 先置位:即使本轮续跑,下一轮 final 也不再 reflect(封顶 1 轮)
+                ok, gap = _reflect(user_input, messages, answer, chat_fn, cfg)
+                if not ok and (step_i + 1) < max_steps:
+                    yield {"type": "thinking", "content": f"自查发现遗漏: {gap}，补充中…"}
+                    messages.append({"role": "assistant", "content": answer})
+                    messages.append({"role": "user",
+                                     "content": f"上面的草稿遗漏: {gap}。请用工具补充后给出更完整的最终回答。"})
+                    continue   # 续跑一轮(下一轮 final 时 reflect_used 已 True,不再 reflect)
+            # 接受答案
+            yield from _emit_text_as_delta(answer)
+            yield {"type": "final_done"}
             break
 
         # 工具步
@@ -210,6 +223,21 @@ def _emit_text_as_delta(text: str, chunk_size: int = 8) -> Iterator[dict]:
     """把完整文本 chunk 成 delta 事件(统一流式口径:先拿全文本再分段吐)。"""
     for i in range(0, len(text), chunk_size):
         yield {"type": "delta", "content": text[i:i + chunk_size]}
+
+
+def _reflect(user_input, messages, draft, chat_fn, cfg) -> tuple[bool, str]:
+    """校验草稿是否回答了问题。返回 (ok, gap)。失败回退 ok=True(不阻塞主流程)。"""
+    observations = "\n".join(m["content"].replace("Observation:", "").strip()
+                             for m in messages
+                             if m.get("role") == "user" and "Observation:" in m.get("content", ""))
+    sys_r = render_reflect(question=user_input, observations=observations[:800], draft=draft[:800])
+    try:
+        res = chat_fn(cfg, [{"role": "system", "content": sys_r},
+                            {"role": "user", "content": "请输出校验 JSON。"}], tools=None)
+        obj = _safe_intent(res.get("content", ""))
+        return bool(obj.get("ok", True)), str(obj.get("gap", ""))
+    except Exception:
+        return True, ""   # 回退:不阻塞
 
 
 def _history_summary(history: list[dict]) -> str:
