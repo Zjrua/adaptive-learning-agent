@@ -2,6 +2,8 @@
 
 一个**状态驱动**的实习备战系统：用可视化的技能树规划学习路径、追踪掌握进度、解锁成就；简历和开源项目是这棵树结出的**果实**。
 
+> 📄 **[系统设计文档（飞书）](https://my.feishu.cn/docx/M6FGdMITtoZenZxS8X5cRjXXnIQ)** — 完整设计思路与技术路线（Agent 三层架构 / RAG 混合检索 / Reflexion 自校验 / 飞书文档产出闭环 / 面试讲法）。本地 spec 与实现计划见 `docs/superpowers/`。
+
 > Obsidian / Notion / 飞书是对**已有知识**的总结；技能树是对**未来学习路径**的规划，有明确的进度反馈。
 
 ```

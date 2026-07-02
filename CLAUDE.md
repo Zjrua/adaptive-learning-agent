@@ -7,6 +7,11 @@ This file gives AI coding agents context for working in this repository.
 实习备战系统。Owner: 张钧瑞 (Zjrua)，哈工大应用统计研究生(2025-2028)。
 **技能树是主体**——可视化学习路径 + 掌握度追踪 + AI 生成；简历和开源项目是**果实**。
 
+> 📄 **[系统设计文档（飞书）](https://my.feishu.cn/docx/M6FGdMITtoZenZxS8X5cRjXXnIQ)** — Agent 系统的完整设计思路与技术路线。本地设计文档：
+> - 设计 spec：`docs/superpowers/specs/2026-07-02-agent-depth-design.md`（最新：记忆/短路/提案/Reflexion/Prompt/doc→wiki）
+> - 实现计划：`docs/superpowers/plans/2026-07-02-agent-depth.md`
+> - 原始设计：`docs/superpowers/specs/2026-06-30-llm-agent-design.md`
+
 ## 架构总览
 
 全栈应用：**React(前端) + FastAPI(后端) + JSON 文件存储(多用户隔离)**。
