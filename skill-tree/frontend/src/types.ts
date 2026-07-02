@@ -10,6 +10,15 @@ export interface Task {
   verify?: Task[]   // 验收子任务（挂在该学习知识点下）
 }
 
+export interface NodeSpec {
+  id: string
+  name: string
+  category?: string
+  status?: string
+  depends_on?: string[]
+  tasks: Task[]
+}
+
 export interface NodeDir { id: string; color: string; branch: string }
 
 export interface GraphNode {
@@ -92,6 +101,10 @@ export interface Fruit {
   color: string; pct: number; has_pdf: boolean
 }
 
+// ── LLM 供应商/配置(工具条切换用) ──
+export interface Provider { id: string; label: string; base_url: string; model: string; json_mode: boolean }
+export interface LlmConfig { provider: string; base_url: string; api_key: string; model: string; configured?: boolean }
+
 // ── Agent 对话 ──
 export type AgentEvent =
   | { type: 'thinking'; content: string }
@@ -101,7 +114,7 @@ export type AgentEvent =
   | { type: 'delta'; content: string }           // 流式逐 token
   | { type: 'final_done' }                       // 流式结束
   | { type: 'doc_card'; doc_type: string; content: string }
-  | { type: 'node_proposal'; node: unknown }
+  | { type: 'node_proposal'; mode: 'new_node' | 'add_tasks'; node?: NodeSpec; node_id?: string; tasks?: Task[]; incomplete?: boolean }
   | { type: 'error'; content: string }
   | { type: 'done' }
 

@@ -1,6 +1,24 @@
-import type { Graph, Profile, Template, Fruit, AgentEvent, ChatHistory, ChatSession, SearchHit, Provider, LlmConfig } from './types'
+import type { Graph, Profile, Template, Fruit, AgentEvent, ChatHistory, ChatSession, SearchHit, Provider, LlmConfig, NodeSpec, Task } from './types'
 
 const BASE = ''   // 同源(开发走 vite proxy /api → :8000)
+
+export async function applyNode(treeId: string, node: NodeSpec, branchId?: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${BASE}/ai/apply-node`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-User-Id': getUserId() },
+    body: JSON.stringify({ tree_id: treeId, node, branch_id: branchId }),
+  })
+  return res.json()
+}
+
+export async function applyTasks(treeId: string, nodeId: string, tasks: Task[]): Promise<{ ok: boolean }> {
+  const res = await fetch(`${BASE}/ai/apply-tasks`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-User-Id': getUserId() },
+    body: JSON.stringify({ tree_id: treeId, node_id: nodeId, tasks }),
+  })
+  return res.json()
+}
 
 const USER_KEY = 'skilltree_user_id'
 export const getUserId = () => localStorage.getItem(USER_KEY) || 'default'
