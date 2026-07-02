@@ -38,30 +38,29 @@ def inject_refs(system_prompt: str, refs_context: str) -> str:
 
 def parse_react(text: str) -> dict:
     """解析 ReAct 一步。返回 {type: tool|final, action?, arguments?, answer?}。
-    - 含 Action 行 → tool 步（+ Arguments JSON，缺省 {}）
-    - 含 Final Answer → final 步
-    - 都没有 → 当作 final（answer = 原文，优雅降级）
-    """
-    if "Action:" in text:
-        action = _after(text, "Action:").split()[0] if _after(text, "Action:").strip() else ""
-        args_raw = _after(text, "Arguments:")
-        try:
-            args = json.loads(args_raw) if args_raw.strip() else {}
-            if not isinstance(args, dict):
-                args = {}
-        except Exception:
-            args = {}
+    正则化容错:Action 后中文注释/括号、Action 换行、多行 JSON Arguments。
+    都不匹配→当 final(原样 answer,优雅降级)。"""
+    # 工具步:Action 行
+    m_action = re.search(r"Action\s*:\s*([A-Za-z_]\w*)", text)
+    if m_action:
+        action = m_action.group(1)
+        m_args = re.search(r"Arguments\s*:\s*([\s\S]*?)(?=\n(?:Thought|Action|Final Answer)\s*:|$)", text)
+        args: dict = {}
+        if m_args:
+            raw = m_args.group(1).strip()
+            if raw:
+                try:
+                    parsed = json.loads(raw)
+                    args = parsed if isinstance(parsed, dict) else {}
+                except Exception:
+                    args = {}
         return {"type": "tool", "action": action, "arguments": args}
-    if "Final Answer:" in text:
-        return {"type": "final", "answer": _after(text, "Final Answer:")}
+    # Final Answer
+    m_final = re.search(r"Final Answer\s*:\s*([\s\S]*)", text)
+    if m_final:
+        return {"type": "final", "answer": m_final.group(1).strip()}
+    # 都没有→当 final(原样)
     return {"type": "final", "answer": text.strip()}
-
-
-def _after(text: str, marker: str) -> str:
-    i = text.find(marker)
-    if i < 0:
-        return ""
-    return text[i + len(marker):].strip()
 
 
 # 默认 chat_fn：真实工具调用协议

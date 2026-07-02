@@ -96,3 +96,31 @@ def test_inject_refs_appends_context():
 
 def test_inject_refs_empty_returns_unchanged():
     assert inject_refs("原文", "") == "原文"
+
+
+def test_parse_react_action_with_chinese_comment():
+    """Action 后跟中文括号注释,应只取工具名。"""
+    step = parse_react("Thought: 查\nAction: get_progress（查进度）\nArguments: {}")
+    assert step["type"] == "tool"
+    assert step["action"] == "get_progress"
+
+
+def test_parse_react_action_on_next_line():
+    """Action 与工具名之间换行。"""
+    step = parse_react("Thought: 查\nAction:\nget_progress\nArguments: {}")
+    assert step["action"] == "get_progress"
+
+
+def test_parse_react_multiline_json_arguments():
+    """Arguments 是多行 JSON。"""
+    text = ('Thought: x\nAction: add_node\nArguments: {\n  "description": "LightGCN"\n}')
+    step = parse_react(text)
+    assert step["type"] == "tool"
+    assert step["arguments"] == {"description": "LightGCN"}
+
+
+def test_parse_react_final_answer_multiline():
+    """Final Answer 后是多行内容。"""
+    step = parse_react("Thought: ok\nFinal Answer: 第一行\n第二行")
+    assert step["type"] == "final"
+    assert "第一行" in step["answer"] and "第二行" in step["answer"]
