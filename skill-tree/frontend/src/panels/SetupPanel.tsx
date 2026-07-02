@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { api, getUserId, setUserId, type UserInfo, type Provider, type LlmConfig } from '../api'
+import { api, getUserId, setUserId, getLarkConfig, listWikiSpaces, setWikiSpace, type UserInfo } from '../api'
+import type { Provider, LlmConfig } from '../types'
 
 interface Props {
   onUserChanged: () => void   // 用户切换后重载所有数据
@@ -23,13 +24,28 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
   const [generating, setGenerating] = useState(false)
   const [genResult, setGenResult] = useState<{ trees: any[]; profile: any } | null>(null)
   const [error, setError] = useState('')
+  const [spaces, setSpaces] = useState<{ space_id: string; name: string }[]>([])
+  const [curSpace, setCurSpace] = useState<string | null>(null)
+  const [spaceErr, setSpaceErr] = useState('')
+  const [spaceBusy, setSpaceBusy] = useState(false)
 
   // 加载用户列表 + 供应商 + 当前 LLM 配置
   useEffect(() => {
     api.users().then(setUsers).catch(() => {})
     api.providers().then(setProviders).catch(() => {})
     api.getLlmConfig().then(setCfg).catch(() => {})
+    getLarkConfig().then(c => setCurSpace(c.wiki_space_id)).catch(() => {})
+    listWikiSpaces().then(r => {
+      if (r.ok) setSpaces(r.spaces || [])
+      else setSpaceErr(r.error || '无法获取空间列表')
+    }).catch(e => setSpaceErr(String(e)))
   }, [])
+
+  const onPickSpace = async (id: string) => {
+    setSpaceBusy(true)
+    try { await setWikiSpace(id); setCurSpace(id) }
+    finally { setSpaceBusy(false) }
+  }
 
   const pickUser = (id: string) => { setUserId(id); onUserChanged() }
   const createAndPick = async () => {
@@ -163,6 +179,14 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
             <button className="btn primary" onClick={saveCfg}>保存并下一步 →</button>
           </div>
           {testMsg && <div className={`test-msg ${testMsg.ok ? 'ok' : 'fail'}`}>{testMsg.ok ? '✓ ' : '✗ '}{testMsg.msg}</div>}
+
+          <h3 className="psec" style={{ marginTop: 24 }}>飞书知识库归档</h3>
+          <div className="setup-hint">选择一个知识库空间，Agent 产出的笔记/复习卡/周报会自动归档到这里。</div>
+          {spaceErr && <div className="test-msg fail" style={{ marginTop: 8 }}>{spaceErr}（请先执行 lark-cli auth login）</div>}
+          <select className="field" value={curSpace || ''} onChange={e => onPickSpace(e.target.value)} disabled={spaceBusy} style={{ marginTop: 8 }}>
+            <option value="">不归档（仅生成单篇文档）</option>
+            {spaces.map(s => <option key={s.space_id} value={s.space_id}>{s.name}</option>)}
+          </select>
         </div>
       )}
 

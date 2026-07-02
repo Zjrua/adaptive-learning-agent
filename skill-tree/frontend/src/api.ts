@@ -24,6 +24,26 @@ const USER_KEY = 'skilltree_user_id'
 export const getUserId = () => localStorage.getItem(USER_KEY) || 'default'
 export const setUserId = (id: string) => localStorage.setItem(USER_KEY, id)
 
+// ── 飞书知识库归档配置 ──
+export async function listWikiSpaces(): Promise<{ ok: boolean; spaces: { space_id: string; name: string }[]; error?: string }> {
+  const res = await fetch(`${BASE}/api/lark/spaces`, { headers: { 'X-User-Id': getUserId() } })
+  return res.json()
+}
+
+export async function setWikiSpace(spaceId: string): Promise<{ ok: boolean }> {
+  const res = await fetch(`${BASE}/api/lark/config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-User-Id': getUserId() },
+    body: JSON.stringify({ wiki_space_id: spaceId }),
+  })
+  return res.json()
+}
+
+export async function getLarkConfig(): Promise<{ wiki_space_id: string | null }> {
+  const res = await fetch(`${BASE}/api/lark/config`, { headers: { 'X-User-Id': getUserId() } })
+  return res.json()
+}
+
 /** 带 X-User-Id 头的 fetch */
 function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
   return { 'X-User-Id': getUserId(), ...extra }

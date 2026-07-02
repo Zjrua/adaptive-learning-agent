@@ -592,6 +592,55 @@ def agent_publish_doc(req: PublishReq, x_user_id: str | None = Header(default=No
     return {"ok": True, "url": url, "kind": kind}
 
 
+# ─────────────────────────── 飞书知识库归档配置 ───────────────────────────
+class LarkConfigReq(BaseModel):
+    wiki_space_id: str | None = None
+
+
+def lark_config_path(uid: str) -> Path:
+    return user_dir(uid) / "lark_config.json"
+
+
+@app.get("/api/lark/spaces")
+def lark_spaces(x_user_id: str | None = Header(default=None)) -> dict:
+    """列出当前用户的飞书知识库空间(调 lark-cli wiki +space-list)。"""
+    import subprocess
+    try:
+        p = subprocess.run(["lark-cli", "wiki", "+space-list", "--as", "user", "--format", "json"],
+                           capture_output=True, text=True, timeout=30)
+        if p.returncode != 0:
+            return {"ok": False, "spaces": [], "error": p.stderr[:200]}
+        import json as _json
+        data = _json.loads(p.stdout) if p.stdout.strip().startswith("{") else {"raw": p.stdout}
+        # 防御性解析:lark-cli 输出格式可能变,尝试几种常见结构
+        items = (data.get("data", {}).get("items")
+                 or data.get("spaces")
+                 or data.get("items")
+                 or [])
+        spaces = [{"space_id": s.get("space_id"), "name": s.get("name")} for s in items if isinstance(s, dict)]
+        return {"ok": True, "spaces": spaces}
+    except Exception as e:
+        return {"ok": False, "spaces": [], "error": str(e)}
+
+
+@app.put("/api/lark/config")
+def put_lark_config(req: LarkConfigReq, x_user_id: str | None = Header(default=None)) -> dict:
+    uid = resolve_user(x_user_id)
+    p = lark_config_path(uid)
+    cfg = _load_json(p) if p.exists() else {}
+    if req.wiki_space_id is not None:
+        cfg["wiki_space_id"] = req.wiki_space_id
+    _save_json(p, cfg)
+    return {"ok": True, "wiki_space_id": cfg.get("wiki_space_id")}
+
+
+@app.get("/api/lark/config")
+def get_lark_config(x_user_id: str | None = Header(default=None)) -> dict:
+    uid = resolve_user(x_user_id)
+    p = lark_config_path(uid)
+    return _load_json(p) if p.exists() else {"wiki_space_id": None}
+
+
 # ─────────────────────────── Chat 对话管理 ───────────────────────────
 @app.get("/api/chat/history")
 def get_chat_history(x_user_id: str | None = Header(default=None)) -> dict:
