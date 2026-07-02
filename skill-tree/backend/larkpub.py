@@ -44,7 +44,8 @@ def publish_doc(xml_content: str, title: str = "学习笔记",
     if not token:
         return docx_url, "docx"    # 拿不到 token,优雅降级为 docx
     move_cmd = ["lark-cli", "wiki", "+move", "--as", "user",
-                "--source-doc", token, "--space-id", wiki_space_id]
+                "--obj-type", "docx", "--obj-token", token,
+                "--target-space-id", wiki_space_id]
     try:
         mcode, mout, merr = _run(move_cmd)
     except Exception:
