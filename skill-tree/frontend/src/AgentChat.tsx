@@ -5,6 +5,7 @@ import { ChatMessageView } from './ChatMessage'
 import { ChatToolbar } from './ChatToolbar'
 import { MentionInput } from './MentionInput'
 import { DocCard } from './DocCard'
+import { NodeProposalCard } from './NodeProposalCard'
 
 interface Props {
   onClose?: () => void   // 收起 AI 栏（顶栏按钮触发）
@@ -183,9 +184,16 @@ export function AgentChat({ onClose }: Props) {
               <div key={i}>
                 <ChatMessageView msg={m}
                   streaming={streaming && i === (current.messages.length - 1) && m.role === 'assistant'} />
-                {m.events?.some(e => e.type === 'doc_card') && (
-                  <DocCard content={(m.events!.find(e => e.type === 'doc_card') as any)?.content || ''} onPublished={() => {}} />
-                )}
+                {m.events?.filter(e => e.type === 'doc_card').map((e, j) => (
+                  <DocCard key={`d${j}`} content={(e as any).content || ''} onPublished={() => {}} />
+                ))}
+                {m.events?.filter(e => e.type === 'node_proposal').map((e, j) => {
+                  const ev = e as any
+                  return <NodeProposalCard key={`n${j}`} mode={ev.mode} node={ev.node} nodeId={ev.node_id}
+                                           tasks={ev.tasks} incomplete={ev.incomplete}
+                                           onApplied={() => window.dispatchEvent(new Event('refresh-graph'))}
+                                           onDiscard={() => {}} />
+                })}
               </div>
             ))}
           </div>
