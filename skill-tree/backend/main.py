@@ -219,6 +219,7 @@ def patch_task(patch: TaskPatch, x_user_id: str | None = Header(default=None)) -
     if not _apply_done(full, patch.node_id, patch.task_id, patch.done):
         raise HTTPException(404, f"task not found: {patch.tree_id}/{patch.node_id}/{patch.task_id}")
     _save_json(path, full)
+    SESSIONS.invalidate_snapshot(uid, "graph")
     return get_graph(x_user_id=uid)
 
 
@@ -378,6 +379,7 @@ def apply_tree(payload: dict, x_user_id: str | None = Header(default=None)) -> d
         _save_json(dd / fname, t)
     if payload.get("profile"):
         _save_json(dd / "profile.json", payload["profile"])
+    SESSIONS.invalidate_snapshot(uid, "graph")
     return {"ok": True, "written": len(trees)}
 
 
@@ -390,6 +392,7 @@ def apply_direction(payload: dict, x_user_id: str | None = Header(default=None))
     if t:
         fname = f"{t.get('tree_id','gen_dir')}.json"
         _save_json(dd / fname, t)
+    SESSIONS.invalidate_snapshot(uid, "graph")
     return {"ok": True}
 
 
@@ -401,31 +404,37 @@ class AgentChatReq(BaseModel):
 def _build_ctx(uid: str) -> tuple[agent_tool.Context, dict]:
     """组装工具执行上下文：当前图谱(layout+掌握度) + 简历 + retriever + 勾选回调。"""
     dd = user_dir(uid)
-    trees = load_trees(dd)
-    lay = layout_mod.compute_layout(trees)
-    raw_nodes: dict[str, dict] = {}
-    for t in trees:
-        for b in t.get("branches", []):
-            for n in b.get("nodes", []):
-                raw_nodes.setdefault(n["id"], n)
-    for n in lay["nodes"]:
-        raw = raw_nodes.get(n["id"], {})
-        m, tot, pct = progress_mod.node_mastery(raw)
-        n["mastered"], n["total_points"], n["pct"] = m, tot, pct
-        n["state"] = progress_mod.node_status(raw)
+    cached = SESSIONS.get_snapshot(uid, "graph")
+    if cached is not None:
+        graph = cached["graph"]
+        trees = cached["trees"]
+    else:
+        trees = load_trees(dd)
+        lay = layout_mod.compute_layout(trees)
+        raw_nodes: dict[str, dict] = {}
+        for t in trees:
+            for b in t.get("branches", []):
+                for n in b.get("nodes", []):
+                    raw_nodes.setdefault(n["id"], n)
+        for n in lay["nodes"]:
+            raw = raw_nodes.get(n["id"], {})
+            m, tot, pct = progress_mod.node_mastery(raw)
+            n["mastered"], n["total_points"], n["pct"] = m, tot, pct
+            n["state"] = progress_mod.node_status(raw)
+        ov = {"overall_pct": 0, "mastered_points": 0, "total_points": 0}
+        for t in trees:
+            mm, tt, _ = progress_mod.tree_progress(t.get("branches", []))
+            ov["mastered_points"] += mm
+            ov["total_points"] += tt
+        ov["overall_pct"] = 0 if ov["total_points"] == 0 else round(ov["mastered_points"] / ov["total_points"] * 100)
+        graph = {"nodes": lay["nodes"], "overview": ov}
+        SESSIONS.set_snapshot(uid, "graph", {"graph": graph, "trees": trees})
     resume: dict = {}
     prof_p = dd / "profile.json"
     if prof_p.exists():
         resume = _load_json(prof_p)
     cfg = _load_json(llm_config_path(uid)) if llm_config_path(uid).exists() else {}
     retriever = Retriever(index_dir=rag_index_dir(uid), cfg=cfg)
-    ov = {"overall_pct": 0, "mastered_points": 0, "total_points": 0}
-    for t in trees:
-        mm, tt, _ = progress_mod.tree_progress(t.get("branches", []))
-        ov["mastered_points"] += mm
-        ov["total_points"] += tt
-    ov["overall_pct"] = 0 if ov["total_points"] == 0 else round(ov["mastered_points"] / ov["total_points"] * 100)
-    graph = {"nodes": lay["nodes"], "overview": ov}
 
     def on_toggle(tree_id, node_id, task_id, done):
         path = _find_tree_file(dd, tree_id)
@@ -434,6 +443,7 @@ def _build_ctx(uid: str) -> tuple[agent_tool.Context, dict]:
         full = _load_json(path)
         if _apply_done(full, node_id, task_id, done):
             _save_json(path, full)
+            SESSIONS.invalidate_snapshot(uid, "graph")
             return True
         return False
 
