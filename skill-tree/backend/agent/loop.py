@@ -8,7 +8,7 @@ import json
 import re
 from typing import Iterator
 
-from agent.prompts import render_planner, render_executor
+from agent.prompts import render_planner, render_executor, render_chat_direct, render_reflect
 from agent.tools import TOOLS_EXECUTOR, tool_schema_text
 from agent.tool_runtime import execute_tool, Context
 from agent.protocol import resolve_tool_calls
@@ -91,6 +91,12 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
 
     yield {"type": "thinking", "content": f"意图：{intent.get('intent', 'query')}"}
 
+    # ── 2a. chat 短路:单步直答,不进 ReAct ──
+    if intent.get("intent") == "chat":
+        yield from _chat_direct(user_input, history or [], chat_fn, cfg)
+        yield {"type": "done"}
+        return
+
     # ── 2. Executor（chat 短路；其余走 ReAct）──
     sys_e = render_executor(tools_text=tool_schema_text(tools), graph_summary=graph_summary)
     # 引用预处理：解析用户消息里的 #/@/$ 并注入上下文
@@ -147,10 +153,12 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
                 step = {"type": "tool", "action": calls[0].name, "arguments": calls[0].arguments}
 
         if step["type"] == "final":
-            if step.get("answer") and not step["answer"].startswith("（已达到最大"):
-                yield from _stream_final(ctx, messages, chat_fn, cfg)
+            answer = step.get("answer", "")
+            if answer and not answer.startswith("（已达到最大"):
+                yield from _emit_text_as_delta(answer)
+                yield {"type": "final_done"}
             else:
-                yield {"type": "final_answer", "content": step["answer"]}
+                yield {"type": "final_answer", "content": answer}
             break
 
         # 工具步
@@ -181,85 +189,37 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
     yield {"type": "done"}
 
 
-def _stream_final(ctx, messages, chat_fn, cfg) -> "Iterator[dict]":
-    """流式产出最终回答：用 chat_fn 的流式模式逐 token yield delta。
-    用全新的 system prompt（要求直接回答，不带 ReAct 格式），避免模型把
-    Thought/Action/Final Answer 标记吐进流式输出。事实依据来自 Executor 收集的 Observation。
-    回退：若 chat_fn 不支持流式，降级为一次性 delta + final_done。"""
-    # 提取 Executor 收集的 Observation（工具产出）作为事实依据
-    observations = [m["content"] for m in messages
-                    if m.get("role") == "user" and "Observation:" in m.get("content", "")]
-    # 用户原始问题（messages[1] 是首条 user）
-    user_question = messages[1]["content"] if len(messages) > 1 else ""
-
-    # 全新 system prompt：明确要求直接回答、不要 ReAct 格式
-    sys_final = ("你是技能树系统的学习助手。现在请直接给用户最终回答。\n"
-                 "要求：直接输出回答内容，不要写 Thought / Action / Final Answer 等标记，"
-                 "不要解释你在做什么。用中文，可用 markdown（标题/列表/代码块/加粗）。")
-    facts = "\n".join(observations) if observations else "（无额外检索信息，基于你的知识回答）"
-    stream_messages = [
-        {"role": "system", "content": sys_final},
-        {"role": "user", "content": f"用户问题：{user_question}\n\n已知信息：\n{facts}\n\n请直接给出最终回答。"},
-    ]
+def _chat_direct(user_input, history, chat_fn, cfg) -> Iterator[dict]:
+    """chat 意图:一次 LLM 直答,拿全文本后 chunk 成 delta(统一流式口径)。"""
+    sys_c = render_chat_direct(_history_summary(history))
+    messages = [{"role": "system", "content": sys_c}]
+    for m in history:
+        if m.get("role") in ("user", "assistant") and m.get("content"):
+            messages.append({"role": m["role"], "content": m["content"]})
+    messages.append({"role": "user", "content": user_input})
     try:
-        chunks = chat_fn(cfg, stream_messages, tools=None, stream=True)
-        # 前缀剥离状态机：模型可能仍带 "Final Answer:" / "Thought:" 等开头，逐 token 过滤
-        prefix_buf = ""          # 累积开头字符，判断是否是 ReAct 前缀
-        prefix_checked = False   # 是否已完成前缀判断
-        for ev in chunks:
-            if not (isinstance(ev, dict) and ev.get("type") == "delta"):
-                continue
-            piece = ev["content"]
-            if not prefix_checked:
-                prefix_buf += piece
-                # 检测常见 ReAct 前缀
-                stripped = _strip_react_prefix(prefix_buf)
-                if stripped is not None:
-                    # 已能判断：stripped 是去掉前缀后的剩余内容
-                    prefix_checked = True
-                    if stripped:
-                        yield {"type": "delta", "content": stripped}
-                    prefix_buf = ""
-                elif len(prefix_buf) > 30:
-                    # 超过 30 字仍未匹配前缀，认为无前缀，原样输出累积内容
-                    prefix_checked = True
-                    yield {"type": "delta", "content": prefix_buf}
-                    prefix_buf = ""
-                # 否则继续累积，不输出（等更多 token 判断）
-            else:
-                yield {"type": "delta", "content": piece}
-        # 若全程没输出（前缀判断未结束且有残留），补发
-        if not prefix_checked and prefix_buf:
-            yield {"type": "delta", "content": _strip_react_prefix(prefix_buf) or prefix_buf}
-        yield {"type": "final_done"}
-        return
-    except TypeError:
-        pass  # chat_fn 不接受 stream 参数
-    except Exception:
-        pass
-    # 降级：非流式一次性返回（同样剥离前缀）
-    try:
-        res = chat_fn(cfg, stream_messages, tools=None)
-        yield {"type": "delta", "content": _strip_react_prefix(res.get("content", "")) or res.get("content", "")}
+        res = chat_fn(cfg, messages, tools=None)
+        answer = res.get("content", "") or "（无回复）"
     except Exception as e:
-        yield {"type": "delta", "content": f"（生成失败: {e}）"}
+        answer = f"（生成失败: {e}）"
+    yield from _emit_text_as_delta(answer)
     yield {"type": "final_done"}
 
 
-def _strip_react_prefix(text: str) -> "str | None":
-    """剥离开头的 ReAct 前缀（Final Answer:/Thought:/Action: 等）。
-    返回 None 表示尚无法判断（前缀可能未结束）；返回字符串表示已判断（可能为空）。"""
-    for marker in ("Final Answer:", "Final answer:", "final answer:"):
-        if text.startswith(marker):
-            return text[len(marker):].lstrip()
-    for marker in ("Thought:", "Action:", "Arguments:", "Observation:"):
-        if text.startswith(marker):
-            # 这些不该出现在最终回答里，整段视为前缀继续等待？不——直接剥离该行
-            return text[len(marker):].lstrip()
-    # 还没匹配任何前缀，但内容里已含换行或超过若干字符 → 无前缀
-    if "\n" in text or len(text) > 20:
-        return text
-    return None  # 仍不确定，继续累积
+def _emit_text_as_delta(text: str, chunk_size: int = 8) -> Iterator[dict]:
+    """把完整文本 chunk 成 delta 事件(统一流式口径:先拿全文本再分段吐)。"""
+    for i in range(0, len(text), chunk_size):
+        yield {"type": "delta", "content": text[i:i + chunk_size]}
+
+
+def _history_summary(history: list[dict]) -> str:
+    if not history:
+        return ""
+    lines = []
+    for m in history[-6:]:
+        role = "用户" if m.get("role") == "user" else "助手"
+        lines.append(f"{role}: {m.get('content','')[:80]}")
+    return "\n".join(lines)
 
 
 def _run_writer(ctx, user_input, executor_messages, chat_fn, cfg) -> Iterator[dict]:
