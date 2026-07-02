@@ -396,6 +396,81 @@ def apply_direction(payload: dict, x_user_id: str | None = Header(default=None))
     return {"ok": True}
 
 
+def _apply_node_to_tree(tree: dict, node: dict, branch_id: str | None = None) -> bool:
+    """把 node 插入 tree 的指定 branch(空则第一个 branch)。同 id 去重。返回是否插入。"""
+    branches = tree.get("branches", [])
+    target = None
+    for b in branches:
+        if branch_id and b.get("id") == branch_id:
+            target = b
+            break
+    if target is None and branches:
+        target = branches[0]
+    if target is None:
+        return False
+    if any(n.get("id") == node.get("id") for n in target.get("nodes", [])):
+        return False    # 同 id 已存在,不重复加
+    target.setdefault("nodes", []).append(node)
+    return True
+
+
+def _apply_tasks_to_node(tree: dict, node_id: str, tasks: list) -> bool:
+    """把 tasks 追加到 tree 里 id=node_id 的节点。同 task id 去重。返回是否找到节点。"""
+    for b in tree.get("branches", []):
+        for n in b.get("nodes", []):
+            if n.get("id") == node_id:
+                existing = {t.get("id") for t in n.get("tasks", [])}
+                for t in tasks:
+                    if t.get("id") not in existing:
+                        n.setdefault("tasks", []).append(t)
+                return True
+    return False
+
+
+class ApplyNodeReq(BaseModel):
+    tree_id: str
+    node: dict
+    branch_id: str | None = None
+
+
+@app.post("/api/ai/apply-node")
+def apply_node(req: ApplyNodeReq, x_user_id: str | None = Header(default=None)) -> dict:
+    """把 node_proposal 确认的节点写入指定 tree 文件。"""
+    uid = resolve_user(x_user_id)
+    dd = user_dir(uid)
+    path = _find_tree_file(dd, req.tree_id)
+    if path is None:
+        raise HTTPException(404, f"tree not found: {req.tree_id}")
+    tree = _load_json(path)
+    if not _apply_node_to_tree(tree, req.node, req.branch_id):
+        raise HTTPException(400, "插入失败:无 branch 或 id 已存在")
+    _save_json(path, tree)
+    SESSIONS.invalidate_snapshot(uid, "graph")
+    return {"ok": True, "written": True}
+
+
+class ApplyTasksReq(BaseModel):
+    tree_id: str
+    node_id: str
+    tasks: list
+
+
+@app.post("/api/ai/apply-tasks")
+def apply_tasks(req: ApplyTasksReq, x_user_id: str | None = Header(default=None)) -> dict:
+    """把 node_proposal 确认的补充 tasks 追加到指定 node。"""
+    uid = resolve_user(x_user_id)
+    dd = user_dir(uid)
+    path = _find_tree_file(dd, req.tree_id)
+    if path is None:
+        raise HTTPException(404, f"tree not found: {req.tree_id}")
+    tree = _load_json(path)
+    if not _apply_tasks_to_node(tree, req.node_id, req.tasks):
+        raise HTTPException(404, f"node not found: {req.node_id}")
+    _save_json(path, tree)
+    SESSIONS.invalidate_snapshot(uid, "graph")
+    return {"ok": True}
+
+
 # ─────────────────────────── Agent 对话(SSE) ───────────────────────────
 class AgentChatReq(BaseModel):
     message: str
