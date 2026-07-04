@@ -1,7 +1,9 @@
 """main.py — FastAPI 后端（单用户 + AI 生成）。
 
-数据全部存放在 DATA_ROOT 下（单用户）。DATA_ROOT 默认指向
-data/users/default，可通过环境变量 DATA_ROOT 覆盖（测试与桌面打包依赖此点）。
+数据全部存放在 DATA_ROOT 下（单用户）。DATA_ROOT 默认指向用户主目录
+~/.skill-tree/data（桌面应用：升级/卸载不丢数据），可通过环境变量 DATA_ROOT
+覆盖（开发期/测试依赖此点）。首次启动时若 DATA_ROOT 为空，会从内置 seed 目录
+（SEED_DIR，默认 data/users/default）复制初始技能树。
 
 API:
   GET  /api/graph          合并去重 + 布局 + 掌握度 + 成就 + 总览
@@ -37,13 +39,39 @@ from chat_store import ChatStore
 from fastapi.responses import StreamingResponse
 
 HERE = Path(__file__).resolve().parent
-DATA_ROOT = Path(os.environ.get("DATA_ROOT", HERE.parent / "data" / "users" / "default"))
-RESUME_DIR = Path(os.environ.get("RESUME_DIR", HERE.parent.parent / "resume"))
+
+
+def _user_data_root() -> Path:
+    """桌面应用:数据存用户主目录;开发期/测试可被 DATA_ROOT env 覆盖。"""
+    env = os.environ.get("DATA_ROOT")
+    if env:
+        return Path(env)
+    return Path.home() / ".skill-tree" / "data"
+
+
+def seed_if_empty(target: Path, seed: Path) -> None:
+    """target 为空(无任何文件)时,从 seed 复制初始数据;否则跳过(幂等)。"""
+    if not seed.exists() or not seed.is_dir():
+        return
+    if target.exists() and any(target.iterdir()):
+        return   # 已有数据,不覆盖
+    target.mkdir(parents=True, exist_ok=True)
+    import shutil
+    for p in seed.iterdir():
+        if p.is_file():
+            shutil.copy2(p, target / p.name)
+
+
+DATA_ROOT = _user_data_root()
+_SEED_DIR = Path(os.environ.get("SEED_DIR", HERE.parent / "data" / "users" / "default"))
+seed_if_empty(DATA_ROOT, _SEED_DIR)
+DATA_ROOT.mkdir(parents=True, exist_ok=True)
+RESUME_DIR = Path(os.environ.get("RESUME_DIR", Path.home() / ".skill-tree" / "resume"))
 TEMPLATES_DIR = RESUME_DIR / "templates"
 PROFILES_DIR = RESUME_DIR / "profiles"
 BUILD_DIR = RESUME_DIR / "build"
 # projects/ 已移出本仓库到父目录(与 Resume 同级)。env 可覆盖。
-PROJECTS_DIR = Path(os.environ.get("PROJECTS_DIR", HERE.parent.parent.parent / "projects"))
+PROJECTS_DIR = Path(os.environ.get("PROJECTS_DIR", Path.home() / ".skill-tree" / "projects"))
 
 app = FastAPI(title="Skill Tree API")
 app.add_middleware(
