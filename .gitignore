@@ -87,3 +87,7 @@ skill-tree/data/users/test*/
 # 桌面应用用户主目录数据(若打包后在开发机跑过)
 ~/.skill-tree/
 
+
+# 导出的对话会话(chat export,临时数据,不入库)
+skill-tree/*学习方向*.json
+skill-tree/data/users/*/export_*.json
