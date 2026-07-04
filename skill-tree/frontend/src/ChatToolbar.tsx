@@ -76,9 +76,9 @@ export function ChatToolbar(props: Props) {
         </div>
       </div>
 
-      {/* 第二行：供应商切换(下拉,直选目标) */}
+      {/* 第二行：供应商切换(下拉,直选目标)。状态点诚实反映配置情况 */}
       <div className="ct-row ct-provider">
-        <span className="provider-dot" style={{ background: 'var(--jade)' }} />
+        <span className="provider-dot" style={{ background: cfg.provider ? 'var(--jade)' : 'var(--fg-faint)', color: cfg.provider ? 'var(--jade)' : 'var(--fg-faint)' }} />
         <select
           className="provider-select"
           value={cfg.provider}

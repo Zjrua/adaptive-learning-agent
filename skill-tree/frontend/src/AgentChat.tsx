@@ -25,6 +25,13 @@ export function AgentChat({ onClose }: Props) {
   const [streaming, setStreaming] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+
+  const stopGenerate = () => {
+    abortRef.current?.abort()
+    abortRef.current = null
+    setStreaming(false); setBusy(false)
+  }
 
   const current = sessions.find(s => s.id === currentId)
 
@@ -71,9 +78,19 @@ export function AgentChat({ onClose }: Props) {
     })
   }, [currentId])
 
+  // 自动滚动:仅当用户在底部附近时跟随(避免抢滚动)。流式中增量滚动用 auto 减少抖动。
+  const stickToBottomRef = useRef(true)
+  const onScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [current?.messages])
+    const el = scrollRef.current
+    if (el && stickToBottomRef.current) {
+      el.scrollTo({ top: el.scrollHeight, behavior: streaming ? 'auto' : 'smooth' })
+    }
+  }, [current?.messages, streaming])
 
   const send = async () => {
     const text = input.trim()
@@ -101,6 +118,8 @@ export function AgentChat({ onClose }: Props) {
         .slice(-12)
         .filter(m => m.content)
         .map(m => ({ role: m.role, content: m.content }))
+      const ac = new AbortController()
+      abortRef.current = ac
       await api.agentChatStream(text, history, (ev: AgentEvent) => {
         setSessions(prev => {
           const next = prev.map(s => {
@@ -121,15 +140,28 @@ export function AgentChat({ onClose }: Props) {
           })
           return next
         })
-      })
+      }, ac.signal)
       // 流式结束后同步后端
       setSessions(prev => { sync(prev, currentId); return prev })
     } catch (e: any) {
-      updateCurrent(s => {
-        const msgs = [...s.messages]
-        msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: '⚠ ' + String(e.message || e) }
-        return { ...s, messages: msgs }
-      })
+      // 用户主动停止(abort)不算错误,保留已生成内容
+      if (e?.name === 'AbortError') {
+        updateCurrent(s => {
+          const msgs = [...s.messages]
+          const last = { ...msgs[msgs.length - 1] }
+          if (!last.content) last.content = '（已停止）'
+          msgs[msgs.length - 1] = last
+          return { ...s, messages: msgs }
+        })
+      } else {
+        updateCurrent(s => {
+          const msgs = [...s.messages]
+          msgs[msgs.length - 1] = { ...msgs[msgs.length - 1], content: '⚠ ' + String(e.message || e) }
+          return { ...s, messages: msgs }
+        })
+      }
+    } finally {
+      abortRef.current = null
     }
     setBusy(false); setStreaming(false)
   }
@@ -175,7 +207,7 @@ export function AgentChat({ onClose }: Props) {
       />
       {!collapsed && (
         <>
-          <div className="chat-msgs" ref={scrollRef}>
+          <div className="chat-msgs" ref={scrollRef} onScroll={onScroll}>
             {(current?.messages.length ?? 0) === 0 && (
               <div className="chat-empty">问我学到哪了、下一步学啥…<br />用 #节点 @资源 $方向 引用，/new 开新会话</div>
             )}
@@ -198,6 +230,7 @@ export function AgentChat({ onClose }: Props) {
             ))}
           </div>
           <MentionInput value={input} onChange={setInput} onSend={send}
+                        streaming={streaming} onStop={stopGenerate}
                         onCommand={handleCommand} placeholder="问我… #节点 @资源 $方向 /new" />
         </>
       )}

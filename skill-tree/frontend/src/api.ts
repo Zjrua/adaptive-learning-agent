@@ -94,20 +94,22 @@ export const api = {
   applyTree: (trees: any[], profile: any) => postJson('/api/ai/apply-tree', { trees, profile }),
   applyDirection: (tree: any) => postJson('/api/ai/apply-direction', { tree }),
 
-  // ── Agent 对话(SSE 流式) ──
+  // ── Agent 对话(SSE 流式,支持 AbortController 停止) ──
   agentChatStream(
     message: string,
     history: { role: 'user' | 'assistant'; content: string }[],
     onEvent: (ev: AgentEvent) => void,
+    signal?: AbortSignal,
   ): Promise<void> {
     return fetch(BASE + '/api/agent/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, history }),
+      signal,
     }).then(async (r) => {
       if (!r.ok) throw new Error(await r.text().catch(() => ''))
       const reader = r.body?.getReader()
-      if (!reader) return
+      if (!reader) throw new Error('流式响应不可用(浏览器不支持或后端未正确返回 SSE)')
       const decoder = new TextDecoder()
       let buf = ''
       while (true) {

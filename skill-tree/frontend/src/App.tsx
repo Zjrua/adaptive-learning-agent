@@ -23,6 +23,7 @@ const AI_OPEN_KEY = 'ai_open'
 export default function App() {
   const [route, setRoute] = useState<Route>(currentRoute())
   const [graph, setGraph] = useState<Graph | null>(null)
+  const [graphErr, setGraphErr] = useState(false)
   const [profile, setProfile] = useState<Profile | null>(null)
   const [templates, setTemplates] = useState<Template[]>([])
   const [fruits, setFruits] = useState<Fruit[]>([])
@@ -42,7 +43,8 @@ export default function App() {
   }, [])
 
   const refreshGraph = useCallback(() => {
-    api.graph().then(setGraph).catch(e => console.error('graph', e))
+    setGraphErr(false)
+    api.graph().then(setGraph).catch(e => { console.error('graph', e); setGraphErr(true) })
   }, [])
   useEffect(refreshGraph, [refreshGraph, reloadKey])
 
@@ -120,6 +122,19 @@ export default function App() {
       {/* 主体：主内容 + 可拖动 AI 右栏 */}
       <div className="body" style={{ '--ai-width': `${aiWidth}px` } as React.CSSProperties}>
         <main className="main">
+          {route === 'tree' && graphErr && (
+            <div className="panel active">
+              <div className="empty-state">
+                <p>⚠ 图谱加载失败,请检查后端是否运行。</p>
+                <button className="btn primary" onClick={() => setReloadKey(k => k + 1)}>重试</button>
+              </div>
+            </div>
+          )}
+          {route === 'tree' && !graph && !graphErr && (
+            <div className="panel active">
+              <div className="empty-state"><p>加载中…</p></div>
+            </div>
+          )}
           {route === 'tree' && graph && (
             <>
               <div className="panel active">

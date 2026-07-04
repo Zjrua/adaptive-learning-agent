@@ -1,4 +1,4 @@
-import { forwardRef } from 'react'
+import { forwardRef, useState } from 'react'
 import type { GraphNode, Task } from './types'
 
 interface Props {
@@ -20,10 +20,15 @@ export const NodeCard = forwardRef<HTMLDivElement, Props>(function NodeCard(
   { node, x, y, open, onPath, dim, onOpenToggle, onHover, onToggle, onChanged }, ref
 ) {
   const treeId = node.dirs[0]?.id ?? ''
+  const [busyTask, setBusyTask] = useState<string | null>(null)   // 正在提交的 task id
 
   const handleToggle = (taskId: string, done: boolean, isVerify: boolean) => {
-    // done 已是目标状态(来自 checkbox 的 e.target.checked)，直接传，不要再取反
-    onToggle(treeId, node.id, taskId, done, isVerify).then(onChanged)
+    if (busyTask) return   // 防重复提交
+    setBusyTask(taskId)
+    onToggle(treeId, node.id, taskId, done, isVerify)
+      .then(onChanged)
+      .catch(() => { /* onChanged 会重载还原 */ })
+      .finally(() => setBusyTask(null))
   }
 
   return (
@@ -31,7 +36,11 @@ export const NodeCard = forwardRef<HTMLDivElement, Props>(function NodeCard(
       ref={ref}
       className={`node s-${node.state} ${open ? 'open' : ''} ${onPath ? 'onpath' : ''} ${dim && !onPath ? 'fade' : ''}`}
       style={{ left: x, top: y }}
+      role="button"
+      tabIndex={0}
+      aria-expanded={open}
       onClick={onOpenToggle}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenToggle() } }}
       onMouseEnter={() => onHover(true)}
       onMouseLeave={() => onHover(false)}
     >
@@ -57,6 +66,7 @@ export const NodeCard = forwardRef<HTMLDivElement, Props>(function NodeCard(
             <KnowledgePoint
               key={tk.id}
               task={tk}
+              busy={busyTask === tk.id || (tk.verify?.some(v => v.id === busyTask) ?? false)}
               onCheck={(done) => handleToggle(tk.id, done, false)}
               onCheckVerify={(vId, done) => handleToggle(vId, done, true)}
             />
@@ -72,9 +82,10 @@ export const NodeCard = forwardRef<HTMLDivElement, Props>(function NodeCard(
 
 /** 一个知识点：学习任务 + 其下的验收子任务 */
 function KnowledgePoint({
-  task, onCheck, onCheckVerify,
+  task, busy, onCheck, onCheckVerify,
 }: {
   task: Task
+  busy: boolean
   onCheck: (done: boolean) => void
   onCheckVerify: (vId: string, done: boolean) => void
 }) {
@@ -82,11 +93,11 @@ function KnowledgePoint({
   // 有验收时，学习任务勾选框是清单提示（disabled）
   return (
     <div className="kp">
-      <div className={`task-row ${task.done ? 'done' : ''} ${hasVerify ? 'checklist' : ''}`}>
+      <div className={`task-row ${task.done ? 'done' : ''} ${hasVerify ? 'checklist' : ''} ${busy ? 'busy' : ''}`}>
         <input
           type="checkbox"
           checked={!!task.done}
-          disabled={hasVerify}
+          disabled={hasVerify || busy}
           onChange={(e) => !hasVerify && onCheck(e.target.checked)}
         />
         <label>
@@ -98,8 +109,8 @@ function KnowledgePoint({
         )}
       </div>
       {task.verify?.map(v => (
-        <div key={v.id} className={`task-row verify ${v.done ? 'done' : ''}`}>
-          <input type="checkbox" checked={!!v.done} onChange={(e) => onCheckVerify(v.id, e.target.checked)} />
+        <div key={v.id} className={`task-row verify ${v.done ? 'done' : ''} ${busy ? 'busy' : ''}`}>
+          <input type="checkbox" checked={!!v.done} disabled={busy} onChange={(e) => onCheckVerify(v.id, e.target.checked)} />
           <label>🎯 {v.title}</label>
         </div>
       ))}

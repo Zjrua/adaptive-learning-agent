@@ -124,8 +124,15 @@ export function SkillTree({ graph, onToggle, onChanged }: Props) {
               key={d.id}
               className="dir-chip"
               style={{ ['--c' as any]: d.color }}
+              role="button"
+              tabIndex={0}
+              aria-pressed={hoverDir === d.id}
               onMouseEnter={() => setHoverDir(d.id)}
               onMouseLeave={() => setHoverDir(null)}
+              onFocus={() => setHoverDir(d.id)}
+              onBlur={() => setHoverDir(null)}
+              onClick={() => setHoverDir(hoverDir === d.id ? null : d.id)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setHoverDir(hoverDir === d.id ? null : d.id) } }}
             >
               <i />{d.icon} {d.title}
             </span>

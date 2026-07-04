@@ -5,6 +5,8 @@ interface Props {
   value: string
   onChange: (v: string) => void
   onSend: () => void
+  onStop?: () => void                // 停止生成(streaming 时显示停止按钮)
+  streaming?: boolean                // 正在生成中
   onCommand?: (cmd: string) => void   // 处理 /new 等命令
   placeholder?: string
 }
@@ -12,7 +14,7 @@ interface Props {
 const SYM_MAP: Record<string, string> = { '#': 'node', '@': 'resource', '$': 'dir' }
 const SYM_LABEL: Record<string, string> = { '#': '节点', '@': '资源', '$': '方向' }
 
-export function MentionInput({ value, onChange, onSend, onCommand, placeholder }: Props) {
+export function MentionInput({ value, onChange, onSend, onStop, streaming, onCommand, placeholder }: Props) {
   const [suggestions, setSuggestions] = useState<{ id: string; name: string }[]>([])
   const [activeSym, setActiveSym] = useState<string | null>(null)
   const [selIdx, setSelIdx] = useState(0)
@@ -88,7 +90,11 @@ export function MentionInput({ value, onChange, onSend, onCommand, placeholder }
         rows={2}
         placeholder={placeholder || '问我… 用 #节点 @资源 $方向 引用，/new 开新会话'}
       />
-      <button className="aibtn solid" onClick={onSend} disabled={!value.trim()}>发送 ▸</button>
+      {streaming && onStop ? (
+        <button className="aibtn ghost" onClick={onStop} title="停止生成">■ 停止</button>
+      ) : (
+        <button className="aibtn solid" onClick={onSend} disabled={!value.trim()}>发送 ▸</button>
+      )}
     </div>
   )
 }
