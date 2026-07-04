@@ -1,0 +1,19 @@
+[package]
+name = "skill-tree-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "技能树学习系统桌面应用"
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0", features = [] }
+tauri-plugin-shell = "2.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "5"
+
+[features]
+# 默认 dev(走 frontendDist/devUrl);cargo tauri build 走 custom-protocol
+custom-protocol = ["tauri/custom-protocol"]

@@ -19,6 +19,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -65,7 +66,28 @@ def seed_if_empty(target: Path, seed: Path) -> None:
 
 
 DATA_ROOT = _user_data_root()
-_SEED_DIR = Path(os.environ.get("SEED_DIR", HERE.parent / "data" / "users" / "default"))
+
+
+def _resolve_seed_dir() -> Path:
+    """seed 源解析:env 优先;打包态(PyInstaller)用 sys._MEIPASS/seed;
+    开发态用项目内 data/users/default。"""
+    env = os.environ.get("SEED_DIR")
+    if env:
+        return Path(env)
+    # PyInstaller onedir:解包资源在 __file__ 同级的 _internal/seed/(新版本)
+    #   或 sys._MEIPASS/seed;兼容两种探测
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        p = Path(meipass) / "seed"
+        if p.is_dir():
+            return p
+    packed = HERE / "seed"
+    if packed.is_dir():
+        return packed
+    return HERE.parent / "data" / "users" / "default"
+
+
+_SEED_DIR = _resolve_seed_dir()
 seed_if_empty(DATA_ROOT, _SEED_DIR)
 DATA_ROOT.mkdir(parents=True, exist_ok=True)
 RESUME_DIR = Path(os.environ.get("RESUME_DIR", Path.home() / ".skill-tree" / "resume"))
