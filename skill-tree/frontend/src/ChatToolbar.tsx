@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import type { ChatSession, SearchHit } from './types'
+import { useState, useEffect } from 'react'
+import type { ChatSession, SearchHit, Provider, LlmConfig } from './types'
 import { api } from './api'
 
 interface Props {
@@ -7,6 +7,7 @@ interface Props {
   currentId: string | null
   collapsed: boolean
   onToggleCollapse: () => void
+  onClose?: () => void              // 收起 AI 栏
   onSelectSession: (id: string) => void
   onNewSession: () => void
   onDeleteSession: (id: string) => void
@@ -20,7 +21,26 @@ export function ChatToolbar(props: Props) {
   const [hits, setHits] = useState<SearchHit[]>([])
   const [confirmDel, setConfirmDel] = useState<string | null>(null)
 
+  // 供应商切换
+  const [providers, setProviders] = useState<Provider[]>([])
+  const [cfg, setCfg] = useState<LlmConfig>({ provider: '', base_url: '', api_key: '', model: '' })
+
+  useEffect(() => {
+    api.providers().then(setProviders).catch(() => {})
+    api.getLlmConfig().then(setCfg).catch(() => {})
+  }, [])
+
   const current = props.sessions.find(s => s.id === props.currentId)
+  const currentProvider = providers.find(p => p.id === cfg.provider)
+
+  const switchProvider = async (pid: string) => {
+    const p = providers.find(x => x.id === pid)
+    if (!p) return
+    const newCfg: LlmConfig = { ...cfg, provider: pid, base_url: p.base_url, model: p.model }
+    setCfg(newCfg)
+    try { await api.saveLlmConfig(newCfg) } catch { /* ignore */ }
+  }
+
   const doSearch = async () => {
     if (!searchQ.trim()) return
     const r = await api.chatSearch(searchQ)
@@ -40,31 +60,56 @@ export function ChatToolbar(props: Props) {
   if (props.collapsed) {
     return (
       <div className="chat-toolbar collapsed">
-        <button className="tbtn ico" onClick={props.onToggleCollapse} title="展开">✦</button>
+        <button className="tbtn ico" onClick={props.onToggleCollapse} title="展开">▢</button>
+        {props.onClose && <button className="tbtn ico" onClick={props.onClose} title="收起">✕</button>}
       </div>
     )
   }
 
   return (
     <div className="chat-toolbar">
-      <button className="tbtn" onClick={() => setShowSessions(v => !v)} title="会话列表">
-        ▾ {current?.title || '新会话'}
-      </button>
-      <div className="tbtn-group">
+      {/* 第一行：标题 + 收起/关闭 */}
+      <div className="ct-row ct-head">
+        <div className="ct-title"><span className="ai-orb">✦</span> AI 助手</div>
+        <div className="ct-actions">
+          <button className="tbtn ico" onClick={props.onToggleCollapse} title="折叠工具条">▢</button>
+          {props.onClose && <button className="tbtn ico" onClick={props.onClose} title="收起">✕</button>}
+        </div>
+      </div>
+
+      {/* 第二行：供应商切换（同宽） */}
+      <div className="ct-row ct-provider">
+        <button className="provider-btn" onClick={() => {
+          // 循环切换下一个供应商
+          const idx = providers.findIndex(p => p.id === cfg.provider)
+          const next = providers[(idx + 1) % providers.length]
+          if (next) switchProvider(next.id)
+        }} title="切换供应商">
+          <span className="provider-dot" style={{ background: 'var(--jade)' }} />
+          {currentProvider?.label || cfg.provider || '未配置'}
+          <span className="provider-switch">⇄</span>
+        </button>
+      </div>
+
+      {/* 第三行：会话/搜索/导出 */}
+      <div className="ct-row ct-tools">
+        <button className="tbtn sm" onClick={() => setShowSessions(v => !v)}>
+          ▾ {current?.title?.slice(0, 8) || '新会话'}
+        </button>
+        <button className="tbtn ico" onClick={props.onNewSession} title="新对话">＋</button>
         <button className="tbtn ico" onClick={() => setShowSearch(v => !v)} title="搜索">🔍</button>
         <button className="tbtn ico" onClick={doExport} title="导出 JSON">⤓</button>
-        <button className="tbtn ico" onClick={props.onToggleCollapse} title="折叠">▸</button>
       </div>
 
       {showSessions && (
         <div className="dropdown">
-          <button className="dd-item new" onClick={() => { props.onNewSession(); setShowSessions(false) }}>+ 新会话</button>
           {props.sessions.map(s => (
             <div key={s.id} className={`dd-item ${s.id === props.currentId ? 'active' : ''}`}>
-              <span onClick={() => { props.onSelectSession(s.id); setShowSessions(false) }}>{s.title}</span>
+              <span className="dd-label" onClick={() => { props.onSelectSession(s.id); setShowSessions(false) }}>{s.title}</span>
               <button className="dd-del" onClick={() => setConfirmDel(s.id)}>✕</button>
             </div>
           ))}
+          {props.sessions.length === 0 && <div className="dd-empty">暂无会话</div>}
         </div>
       )}
 
@@ -87,8 +132,10 @@ export function ChatToolbar(props: Props) {
         <div className="confirm-mask" onClick={() => setConfirmDel(null)}>
           <div className="confirm-box" onClick={e => e.stopPropagation()}>
             <p>删除此会话？不可恢复。</p>
-            <button className="aibtn ghost" onClick={() => setConfirmDel(null)}>取消</button>
-            <button className="aibtn solid" onClick={() => { props.onDeleteSession(confirmDel); setConfirmDel(null) }}>删除</button>
+            <div className="confirm-actions">
+              <button className="aibtn ghost" onClick={() => setConfirmDel(null)}>取消</button>
+              <button className="aibtn solid" onClick={() => { props.onDeleteSession(confirmDel); setConfirmDel(null) }}>删除</button>
+            </div>
           </div>
         </div>
       )}
