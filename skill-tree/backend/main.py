@@ -74,16 +74,16 @@ def _resolve_seed_dir() -> Path:
     env = os.environ.get("SEED_DIR")
     if env:
         return Path(env)
-    # PyInstaller onedir:解包资源在 __file__ 同级的 _internal/seed/(新版本)
-    #   或 sys._MEIPASS/seed;兼容两种探测
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:
         p = Path(meipass) / "seed"
         if p.is_dir():
             return p
-    packed = HERE / "seed"
-    if packed.is_dir():
-        return packed
+    exe_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else HERE
+    for base in (exe_dir, exe_dir / "_internal", HERE, HERE.parent):
+        cand = base / "seed"
+        if cand.is_dir():
+            return cand
     return HERE.parent / "data" / "users" / "default"
 
 
