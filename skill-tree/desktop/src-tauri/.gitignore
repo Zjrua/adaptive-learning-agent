@@ -1,0 +1,14 @@
+# Tauri 构建产物
+/target
+/gen
+
+# sidecar(PyInstaller 冻结产物,build-desktop.sh 生成,不入库)
+/sidecar
+
+# lark-cli 二进制(build-desktop.sh 复制,不入库)
+/resources/lark-cli.exe
+/resources/lark-cli
+
+# 图标(可选:若用 tauri icon 生成可入库,占位图标也可不入)
+# /icons/*.ico
+# /icons/*.png

@@ -52,10 +52,23 @@ fn main() {
             // 2. 找空闲端口
             let port = free_port();
 
-            // 3. spawn 后端 sidecar(与 Tauri 主进程同目录下的 skill-tree-backend[.exe])
+            // 3. spawn 后端 sidecar。
+            //    打包后:sidecar 在 Tauri resource 目录(sidecar/skill-tree-backend.exe)
+            //    dev 模式:在 src-tauri/sidecar/skill-tree-backend.exe
             let sidecar_name = if cfg!(windows) { "skill-tree-backend.exe" } else { "skill-tree-backend" };
-            let sidecar_exe = std::env::current_exe()
-                .map(|p| p.parent().unwrap().join(sidecar_name))
+            let sidecar_exe = app
+                .path()
+                .resolve(format!("sidecar/{}", sidecar_name), tauri::path::BaseDirectory::Resource)
+                .or_else(|_| {
+                    // dev 模式回退:src-tauri/sidecar/
+                    let dev_path = std::env::current_dir()
+                        .map(|p| p.join("sidecar").join(sidecar_name))?;
+                    if dev_path.exists() {
+                        Ok(dev_path)
+                    } else {
+                        Err(tauri::Error::Anyhow(anyhow::anyhow!("sidecar not found")))
+                    }
+                })
                 .expect("resolve sidecar path");
 
             let mut child = Command::new(&sidecar_exe)

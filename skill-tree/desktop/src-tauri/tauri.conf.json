@@ -31,7 +31,11 @@
       "icons/icon.ico",
       "icons/icon.icns"
     ],
-    "resources": ["resources/lark-cli*"],
+    "resources": {
+      "resources/lark-cli.exe": "lark-cli.exe",
+      "sidecar/skill-tree-backend.exe": "sidecar/skill-tree-backend.exe",
+      "sidecar/_internal": "sidecar/_internal"
+    },
     "externalBin": []
   }
 }
