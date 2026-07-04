@@ -43,15 +43,10 @@ case "$(uname -s)" in
 esac
 
 echo "==> 4/4 Tauri 打包 (cargo tauri build)"
-# 把后端 sidecar 产物放到 Tauri 能找到的位置(exe 同目录)
-case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*|Windows*)
-    cp -r backend/dist/skill-tree-backend/* desktop/src-tauri/
-    ;;
-  *)
-    cp -r backend/dist/skill-tree-backend desktop/src-tauri/skill-tree-backend-dist
-    ;;
-esac
+# 把后端 sidecar 产物放到 src-tauri/sidecar/(tauri.conf.json 的 resources 引用此目录)
+rm -rf desktop/src-tauri/sidecar
+mkdir -p desktop/src-tauri/sidecar
+cp -r backend/dist/skill-tree-backend/* desktop/src-tauri/sidecar/
 cd desktop/src-tauri
 cargo tauri build
 
