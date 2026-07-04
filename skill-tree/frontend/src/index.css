@@ -339,16 +339,19 @@ body {
   font-weight: 600; font-size: 15px; color: var(--fg); }
 .ct-title .ai-orb { color: var(--jade); filter: drop-shadow(0 0 6px var(--jade-glow)); }
 .ct-actions { display: flex; gap: 4px; }
-.ct-provider { padding: 2px 0; }
+.ct-provider { padding: 2px 0; display: flex; align-items: center; gap: 8px; }
 .ct-tools { justify-content: flex-start; }
 
-/* 供应商按钮(同宽) */
-.provider-btn { flex: 1; display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-  background: var(--moss); border: 1px solid var(--glass-border); border-radius: 9px;
-  color: var(--fg); font-size: 13px; font-weight: 500; cursor: pointer; transition: all .2s; }
-.provider-btn:hover { border-color: var(--jade); background: var(--moss-2); }
+/* 供应商下拉(直选目标,带状态圆点) */
 .provider-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 6px currentColor; }
-.provider-switch { margin-left: auto; color: var(--fg-faint); font-size: 14px; }
+.provider-select { flex: 1; padding: 7px 10px; background: var(--moss); color: var(--fg);
+  border: 1px solid var(--glass-border); border-radius: 9px; font-size: 13px; font-weight: 500;
+  cursor: pointer; transition: all .2s; appearance: none;
+  background-image: linear-gradient(45deg, transparent 50%, var(--fg-faint) 50%), linear-gradient(135deg, var(--fg-faint) 50%, transparent 50%);
+  background-position: calc(100% - 14px) center, calc(100% - 9px) center;
+  background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+.provider-select:hover { border-color: var(--jade); background-color: var(--moss-2); }
+.provider-select:focus { outline: none; border-color: var(--jade); }
 
 /* 工具按钮 */
 .tbtn { background: var(--moss); border: 1px solid var(--line); color: var(--fg-dim); border-radius: 8px;

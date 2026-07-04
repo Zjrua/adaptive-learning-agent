@@ -31,7 +31,6 @@ export function ChatToolbar(props: Props) {
   }, [])
 
   const current = props.sessions.find(s => s.id === props.currentId)
-  const currentProvider = providers.find(p => p.id === cfg.provider)
 
   const switchProvider = async (pid: string) => {
     const p = providers.find(x => x.id === pid)
@@ -77,18 +76,20 @@ export function ChatToolbar(props: Props) {
         </div>
       </div>
 
-      {/* 第二行：供应商切换（同宽） */}
+      {/* 第二行：供应商切换(下拉,直选目标) */}
       <div className="ct-row ct-provider">
-        <button className="provider-btn" onClick={() => {
-          // 循环切换下一个供应商
-          const idx = providers.findIndex(p => p.id === cfg.provider)
-          const next = providers[(idx + 1) % providers.length]
-          if (next) switchProvider(next.id)
-        }} title="切换供应商">
-          <span className="provider-dot" style={{ background: 'var(--jade)' }} />
-          {currentProvider?.label || cfg.provider || '未配置'}
-          <span className="provider-switch">⇄</span>
-        </button>
+        <span className="provider-dot" style={{ background: 'var(--jade)' }} />
+        <select
+          className="provider-select"
+          value={cfg.provider}
+          onChange={e => switchProvider(e.target.value)}
+          title="切换 LLM 供应商"
+        >
+          <option value="" disabled>未配置</option>
+          {providers.map(p => (
+            <option key={p.id} value={p.id}>{p.label}</option>
+          ))}
+        </select>
       </div>
 
       {/* 第三行：会话/搜索/导出 */}
