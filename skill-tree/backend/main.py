@@ -1,7 +1,7 @@
-"""main.py — FastAPI 后端（多用户 + AI 生成）。
+"""main.py — FastAPI 后端（单用户 + AI 生成）。
 
-用户隔离：data/users/<user_id>/，每个用户独立存树/profile/成就/llm配置。
-user_id 来自请求头 X-User-Id（缺省 default）。将来换成 Depends(get_current_user) 做真鉴权。
+数据全部存放在 DATA_ROOT 下（单用户）。DATA_ROOT 默认指向
+data/users/default，可通过环境变量 DATA_ROOT 覆盖（测试与桌面打包依赖此点）。
 
 API:
   GET  /api/graph          合并去重 + 布局 + 掌握度 + 成就 + 总览
@@ -9,9 +9,7 @@ API:
   GET  /api/profile        个人信息
   GET  /api/templates      简历模板
   GET  /api/fruits         果实(简历成品)
-  GET  /api/users          列出用户
-  POST /api/users          新建用户
-  GET/PUT /api/llm-config  读/存该用户 LLM 配置
+  GET/PUT /api/llm-config  读/存 LLM 配置
   POST /api/llm-config/test  测连通
   POST /api/ai/generate-tree|direction|node   AI 生成
 """
@@ -19,11 +17,10 @@ from __future__ import annotations
 import glob
 import json
 import os
-import re
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Header, Request
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -40,8 +37,7 @@ from chat_store import ChatStore
 from fastapi.responses import StreamingResponse
 
 HERE = Path(__file__).resolve().parent
-DATA_ROOT = Path(os.environ.get("DATA_ROOT", HERE.parent / "data"))
-USERS_DIR = DATA_ROOT / "users"
+DATA_ROOT = Path(os.environ.get("DATA_ROOT", HERE.parent / "data" / "users" / "default"))
 RESUME_DIR = Path(os.environ.get("RESUME_DIR", HERE.parent.parent / "resume"))
 TEMPLATES_DIR = RESUME_DIR / "templates"
 PROFILES_DIR = RESUME_DIR / "profiles"
@@ -62,37 +58,19 @@ if RESUME_DIR.exists():
 SESSIONS = agent_session.SessionStore(ttl=1800)
 
 
-def rag_index_dir(uid: str) -> Path:
-    """每用户独立 RAG 索引目录。"""
-    d = user_dir(uid) / "rag_index"
+def rag_index_dir() -> Path:
+    """RAG 索引目录（DATA_ROOT/rag_index）。"""
+    d = DATA_ROOT / "rag_index"
     d.mkdir(parents=True, exist_ok=True)
     return d
 
 
-def chat_store_path(uid: str) -> Path:
-    return user_dir(uid) / "chat_history.json"
+def chat_store_path() -> Path:
+    return DATA_ROOT / "chat_history.json"
 
 
-def chat_store(uid: str) -> ChatStore:
-    return ChatStore(chat_store_path(uid))
-
-
-# ─────────────────────────── 用户与存储抽象 ───────────────────────────
-_SAFE_ID = re.compile(r"^[A-Za-z0-9_\u4e00-\u9fa5\-]{1,32}$")   # 用户名：字母数字下划线-中文，1-32
-
-
-def resolve_user(x_user_id: str | None) -> str:
-    """从请求头解析 user_id（现在：透传；将来：换鉴权实现）。校验合法性。"""
-    uid = (x_user_id or "default").strip()
-    if not _SAFE_ID.match(uid):
-        raise HTTPException(400, f"invalid user_id: {uid!r}")
-    return uid
-
-
-def user_dir(uid: str) -> Path:
-    d = USERS_DIR / uid
-    d.mkdir(parents=True, exist_ok=True)
-    return d
+def chat_store() -> ChatStore:
+    return ChatStore(chat_store_path())
 
 
 def _load_json(p: Path) -> Any:
@@ -122,9 +100,8 @@ def load_achievements(data_dir: Path) -> dict:
 
 # ─────────────────────────── 图谱 ───────────────────────────
 @app.get("/api/graph")
-def get_graph(x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    dd = user_dir(uid)
+def get_graph() -> dict:
+    dd = DATA_ROOT
     trees = load_trees(dd)
     achievements = load_achievements(dd)
     lay = layout_mod.compute_layout(trees)
@@ -165,7 +142,6 @@ def get_graph(x_user_id: str | None = Header(default=None)) -> dict:
         "dir_order": lay["dir_order"],
         "achievements": [{"def": a, "unlocked": ok} for a, ok in ach_results],
         "overview": overview,
-        "user_id": uid,
         "is_new_user": len(trees) == 0,
     }
 
@@ -209,9 +185,8 @@ def _apply_done(tree: dict, node_id: str, task_id: str, done: bool) -> bool:
 
 
 @app.patch("/api/task")
-def patch_task(patch: TaskPatch, x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    dd = user_dir(uid)
+def patch_task(patch: TaskPatch) -> dict:
+    dd = DATA_ROOT
     path = _find_tree_file(dd, patch.tree_id)
     if path is None:
         raise HTTPException(404, f"tree not found: {patch.tree_id}")
@@ -219,44 +194,8 @@ def patch_task(patch: TaskPatch, x_user_id: str | None = Header(default=None)) -
     if not _apply_done(full, patch.node_id, patch.task_id, patch.done):
         raise HTTPException(404, f"task not found: {patch.tree_id}/{patch.node_id}/{patch.task_id}")
     _save_json(path, full)
-    SESSIONS.invalidate_snapshot(uid, "graph")
-    return get_graph(x_user_id=uid)
-
-
-# ─────────────────────────── 用户管理 ───────────────────────────
-@app.get("/api/users")
-def list_users() -> list[dict]:
-    out = []
-    if USERS_DIR.exists():
-        for d in sorted(USERS_DIR.iterdir()):
-            if d.is_dir():
-                prof_p = d / "profile.json"
-                name = _load_json(prof_p).get("name", d.name) if prof_p.exists() else d.name
-                out.append({"id": d.name, "name": name})
-    return out
-
-
-class NewUser(BaseModel):
-    user_id: str
-
-
-@app.post("/api/users")
-def create_user(req: NewUser) -> dict:
-    if not _SAFE_ID.match(req.user_id):
-        raise HTTPException(400, "user_id 只允许字母数字下划线-中文(1-32)")
-    dd = user_dir(req.user_id)
-    # 初始化空 profile + 默认成就(若不存在)
-    prof_p = dd / "profile.json"
-    if not prof_p.exists():
-        _save_json(prof_p, {"name": req.user_id, "contact": {}, "education": [], "skills": [], "experience": [], "awards": []})
-    ach_p = dd / "achievements.json"
-    if not ach_p.exists():
-        default_ach = USERS_DIR / "default" / "achievements.json"
-        if default_ach.exists():
-            _save_json(ach_p, _load_json(default_ach))
-        else:
-            _save_json(ach_p, {"achievements": []})
-    return {"id": req.user_id, "created": True}
+    SESSIONS.invalidate_snapshot("default", "graph")
+    return get_graph()
 
 
 # ─────────────────────────── LLM 配置 ───────────────────────────
@@ -267,14 +206,13 @@ class LlmConfig(BaseModel):
     model: str = ""
 
 
-def llm_config_path(uid: str) -> Path:
-    return user_dir(uid) / "llm_config.json"
+def llm_config_path() -> Path:
+    return DATA_ROOT / "llm_config.json"
 
 
 @app.get("/api/llm-config")
-def get_llm_config(x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    p = llm_config_path(uid)
+def get_llm_config() -> dict:
+    p = llm_config_path()
     if not p.exists():
         return {"provider": "", "base_url": "", "api_key": "", "model": "", "configured": False}
     cfg = _load_json(p)
@@ -283,9 +221,8 @@ def get_llm_config(x_user_id: str | None = Header(default=None)) -> dict:
 
 
 @app.put("/api/llm-config")
-def put_llm_config(cfg: LlmConfig, x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    p = llm_config_path(uid)
+def put_llm_config(cfg: LlmConfig) -> dict:
+    p = llm_config_path()
     data = cfg.model_dump()
     _save_json(p, data)
     return {"saved": True, "configured": bool(data["api_key"] and data["base_url"])}
@@ -330,9 +267,9 @@ class GenNodeReq(BaseModel):
 
 
 @app.post("/api/ai/generate-tree")
-def gen_tree(req: GenTreeReq, x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    cfg = _load_json(llm_config_path(uid)) if llm_config_path(uid).exists() else {}
+def gen_tree(req: GenTreeReq) -> dict:
+    p = llm_config_path()
+    cfg = _load_json(p) if p.exists() else {}
     if not cfg.get("api_key"):
         raise HTTPException(400, "请先配置 LLM (api_key)")
     try:
@@ -343,9 +280,9 @@ def gen_tree(req: GenTreeReq, x_user_id: str | None = Header(default=None)) -> d
 
 
 @app.post("/api/ai/generate-direction")
-def gen_direction(req: GenDirectionReq, x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    cfg = _load_json(llm_config_path(uid)) if llm_config_path(uid).exists() else {}
+def gen_direction(req: GenDirectionReq) -> dict:
+    p = llm_config_path()
+    cfg = _load_json(p) if p.exists() else {}
     if not cfg.get("api_key"):
         raise HTTPException(400, "请先配置 LLM")
     try:
@@ -356,9 +293,9 @@ def gen_direction(req: GenDirectionReq, x_user_id: str | None = Header(default=N
 
 
 @app.post("/api/ai/generate-node")
-def gen_node(req: GenNodeReq, x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    cfg = _load_json(llm_config_path(uid)) if llm_config_path(uid).exists() else {}
+def gen_node(req: GenNodeReq) -> dict:
+    p = llm_config_path()
+    cfg = _load_json(p) if p.exists() else {}
     if not cfg.get("api_key"):
         raise HTTPException(400, "请先配置 LLM")
     try:
@@ -369,30 +306,28 @@ def gen_node(req: GenNodeReq, x_user_id: str | None = Header(default=None)) -> d
 
 
 @app.post("/api/ai/apply-tree")
-def apply_tree(payload: dict, x_user_id: str | None = Header(default=None)) -> dict:
-    """把 AI 生成的树写回用户目录（覆盖现有方向）。payload: {trees:[...], profile:{}}"""
-    uid = resolve_user(x_user_id)
-    dd = user_dir(uid)
+def apply_tree(payload: dict) -> dict:
+    """把 AI 生成的树写回 DATA_ROOT（覆盖现有方向）。payload: {trees:[...], profile:{}}"""
+    dd = DATA_ROOT
     trees = payload.get("trees", [])
     for t in trees:
         fname = f"{t.get('tree_id','gen')}.json"
         _save_json(dd / fname, t)
     if payload.get("profile"):
         _save_json(dd / "profile.json", payload["profile"])
-    SESSIONS.invalidate_snapshot(uid, "graph")
+    SESSIONS.invalidate_snapshot("default", "graph")
     return {"ok": True, "written": len(trees)}
 
 
 @app.post("/api/ai/apply-direction")
-def apply_direction(payload: dict, x_user_id: str | None = Header(default=None)) -> dict:
+def apply_direction(payload: dict) -> dict:
     """把 AI 生成的单方向作为新文件写入。payload: {tree: {...}}"""
-    uid = resolve_user(x_user_id)
-    dd = user_dir(uid)
+    dd = DATA_ROOT
     t = payload.get("tree", {})
     if t:
         fname = f"{t.get('tree_id','gen_dir')}.json"
         _save_json(dd / fname, t)
-    SESSIONS.invalidate_snapshot(uid, "graph")
+    SESSIONS.invalidate_snapshot("default", "graph")
     return {"ok": True}
 
 
@@ -434,10 +369,9 @@ class ApplyNodeReq(BaseModel):
 
 
 @app.post("/api/ai/apply-node")
-def apply_node(req: ApplyNodeReq, x_user_id: str | None = Header(default=None)) -> dict:
+def apply_node(req: ApplyNodeReq) -> dict:
     """把 node_proposal 确认的节点写入指定 tree 文件。"""
-    uid = resolve_user(x_user_id)
-    dd = user_dir(uid)
+    dd = DATA_ROOT
     path = _find_tree_file(dd, req.tree_id)
     if path is None:
         raise HTTPException(404, f"tree not found: {req.tree_id}")
@@ -445,7 +379,7 @@ def apply_node(req: ApplyNodeReq, x_user_id: str | None = Header(default=None)) 
     if not _apply_node_to_tree(tree, req.node, req.branch_id):
         raise HTTPException(400, "插入失败:无 branch 或 id 已存在")
     _save_json(path, tree)
-    SESSIONS.invalidate_snapshot(uid, "graph")
+    SESSIONS.invalidate_snapshot("default", "graph")
     return {"ok": True, "written": True}
 
 
@@ -456,10 +390,9 @@ class ApplyTasksReq(BaseModel):
 
 
 @app.post("/api/ai/apply-tasks")
-def apply_tasks(req: ApplyTasksReq, x_user_id: str | None = Header(default=None)) -> dict:
+def apply_tasks(req: ApplyTasksReq) -> dict:
     """把 node_proposal 确认的补充 tasks 追加到指定 node。"""
-    uid = resolve_user(x_user_id)
-    dd = user_dir(uid)
+    dd = DATA_ROOT
     path = _find_tree_file(dd, req.tree_id)
     if path is None:
         raise HTTPException(404, f"tree not found: {req.tree_id}")
@@ -467,7 +400,7 @@ def apply_tasks(req: ApplyTasksReq, x_user_id: str | None = Header(default=None)
     if not _apply_tasks_to_node(tree, req.node_id, req.tasks):
         raise HTTPException(404, f"node not found: {req.node_id}")
     _save_json(path, tree)
-    SESSIONS.invalidate_snapshot(uid, "graph")
+    SESSIONS.invalidate_snapshot("default", "graph")
     return {"ok": True}
 
 
@@ -477,9 +410,11 @@ class AgentChatReq(BaseModel):
     history: list = []
 
 
-def _build_ctx(uid: str) -> tuple[agent_tool.Context, dict]:
+def _build_ctx() -> tuple[agent_tool.Context, dict]:
     """组装工具执行上下文：当前图谱(layout+掌握度) + 简历 + retriever + 勾选回调。"""
-    dd = user_dir(uid)
+    # agent 包内 Context/SessionStore 仍按 uid 做缓存键，单机应用固定用 "default"。
+    uid = "default"
+    dd = DATA_ROOT
     cached = SESSIONS.get_snapshot(uid, "graph")
     if cached is not None:
         graph = cached["graph"]
@@ -509,8 +444,9 @@ def _build_ctx(uid: str) -> tuple[agent_tool.Context, dict]:
     prof_p = dd / "profile.json"
     if prof_p.exists():
         resume = _load_json(prof_p)
-    cfg = _load_json(llm_config_path(uid)) if llm_config_path(uid).exists() else {}
-    retriever = Retriever(index_dir=rag_index_dir(uid), cfg=cfg)
+    cfg_p = llm_config_path()
+    cfg = _load_json(cfg_p) if cfg_p.exists() else {}
+    retriever = Retriever(index_dir=rag_index_dir(), cfg=cfg)
 
     def on_toggle(tree_id, node_id, task_id, done):
         path = _find_tree_file(dd, tree_id)
@@ -524,17 +460,16 @@ def _build_ctx(uid: str) -> tuple[agent_tool.Context, dict]:
         return False
 
     ctx = agent_tool.Context(uid=uid, graph=graph, resume=resume,
-                             retriever=retriever, rag_index_dir=rag_index_dir(uid),
+                             retriever=retriever, rag_index_dir=rag_index_dir(),
                              trees=trees, cfg=cfg)
     ctx.on_toggle = on_toggle  # type: ignore[attr-defined]
     return ctx, cfg
 
 
 @app.post("/api/agent/chat")
-def agent_chat(req: AgentChatReq, x_user_id: str | None = Header(default=None)):
+def agent_chat(req: AgentChatReq):
     """Agent 对话入口，SSE 流式返回事件。"""
-    uid = resolve_user(x_user_id)
-    ctx, cfg = _build_ctx(uid)
+    ctx, cfg = _build_ctx()
     if not cfg.get("api_key"):
         raise HTTPException(400, "请先配置 LLM (api_key)")
 
@@ -547,27 +482,27 @@ def agent_chat(req: AgentChatReq, x_user_id: str | None = Header(default=None)):
 
 
 @app.post("/api/rag/build-index")
-def rag_build_index(x_user_id: str | None = Header(default=None)) -> dict:
+def rag_build_index() -> dict:
     """构建/刷新 RAG 源码索引（扫描 ../projects 下所有 .py，AST chunking + embedding）。"""
-    uid = resolve_user(x_user_id)
-    cfg = _load_json(llm_config_path(uid)) if llm_config_path(uid).exists() else {}
+    p = llm_config_path()
+    cfg = _load_json(p) if p.exists() else {}
     if not cfg.get("api_key"):
         raise HTTPException(400, "请先配置 LLM (embedding 需要 api_key)")
     try:
         from rag.indexer import build_index
-        stats = build_index(cfg, PROJECTS_DIR, rag_index_dir(uid))
+        stats = build_index(cfg, PROJECTS_DIR, rag_index_dir())
         return {"ok": True, "stats": stats}
     except Exception as e:
         raise HTTPException(500, f"构建索引失败: {e}")
 
 
 @app.get("/api/rag/status")
-def rag_status(x_user_id: str | None = Header(default=None)) -> dict:
+def rag_status() -> dict:
     """返回 RAG 索引状态（已索引 chunk 数 / 构建时间 / 模型）。"""
-    uid = resolve_user(x_user_id)
     from rag import store as rag_store
-    meta = rag_store.read_meta(rag_index_dir(uid) / "code_meta.json")
-    chunks = rag_store.read_chunks(rag_index_dir(uid) / "code_chunks.jsonl")
+    idx = rag_index_dir()
+    meta = rag_store.read_meta(idx / "code_meta.json")
+    chunks = rag_store.read_chunks(idx / "code_chunks.jsonl")
     return {"count": len(chunks), "built_at": meta.get("built_at", ""), "model": meta.get("model", "")}
 
 
@@ -578,12 +513,11 @@ class PublishReq(BaseModel):
 
 
 @app.post("/api/agent/publish-doc")
-def agent_publish_doc(req: PublishReq, x_user_id: str | None = Header(default=None)) -> dict:
+def agent_publish_doc(req: PublishReq) -> dict:
     """把 Agent 生成的文档发布到飞书(wiki 归档优先),返回 URL + kind。"""
     space = req.wiki_space_id
     if not space:
-        uid = resolve_user(x_user_id)
-        lark_cfg_p = user_dir(uid) / "lark_config.json"
+        lark_cfg_p = lark_config_path()
         if lark_cfg_p.exists():
             space = _load_json(lark_cfg_p).get("wiki_space_id")
     url, kind = publish_doc(req.content, req.title, wiki_space_id=space)
@@ -597,12 +531,12 @@ class LarkConfigReq(BaseModel):
     wiki_space_id: str | None = None
 
 
-def lark_config_path(uid: str) -> Path:
-    return user_dir(uid) / "lark_config.json"
+def lark_config_path() -> Path:
+    return DATA_ROOT / "lark_config.json"
 
 
 @app.get("/api/lark/spaces")
-def lark_spaces(x_user_id: str | None = Header(default=None)) -> dict:
+def lark_spaces() -> dict:
     """列出当前用户的飞书知识库空间(调 lark-cli wiki +space-list)。"""
     import subprocess
     try:
@@ -624,9 +558,8 @@ def lark_spaces(x_user_id: str | None = Header(default=None)) -> dict:
 
 
 @app.put("/api/lark/config")
-def put_lark_config(req: LarkConfigReq, x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    p = lark_config_path(uid)
+def put_lark_config(req: LarkConfigReq) -> dict:
+    p = lark_config_path()
     cfg = _load_json(p) if p.exists() else {}
     if req.wiki_space_id is not None:
         cfg["wiki_space_id"] = req.wiki_space_id
@@ -635,17 +568,15 @@ def put_lark_config(req: LarkConfigReq, x_user_id: str | None = Header(default=N
 
 
 @app.get("/api/lark/config")
-def get_lark_config(x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    p = lark_config_path(uid)
+def get_lark_config() -> dict:
+    p = lark_config_path()
     return _load_json(p) if p.exists() else {"wiki_space_id": None}
 
 
 # ─────────────────────────── Chat 对话管理 ───────────────────────────
 @app.get("/api/chat/history")
-def get_chat_history(x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    return chat_store(uid).load()
+def get_chat_history() -> dict:
+    return chat_store().load()
 
 
 class ChatSyncReq(BaseModel):
@@ -654,9 +585,8 @@ class ChatSyncReq(BaseModel):
 
 
 @app.post("/api/chat/sync")
-def chat_sync(req: ChatSyncReq, x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    chat_store(uid).replace_all(req.sessions, req.current_session_id)
+def chat_sync(req: ChatSyncReq) -> dict:
+    chat_store().replace_all(req.sessions, req.current_session_id)
     return {"ok": True}
 
 
@@ -665,10 +595,10 @@ class ChatTitleReq(BaseModel):
 
 
 @app.post("/api/chat/title")
-def chat_title(req: ChatTitleReq, x_user_id: str | None = Header(default=None)) -> dict:
+def chat_title(req: ChatTitleReq) -> dict:
     """LLM 生成会话标题。失败回退首句截断。"""
-    uid = resolve_user(x_user_id)
-    cfg = _load_json(llm_config_path(uid)) if llm_config_path(uid).exists() else {}
+    p = llm_config_path()
+    cfg = _load_json(p) if p.exists() else {}
     fallback = req.message.strip().replace("\n", " ")[:20] or "新会话"
     if not cfg.get("api_key"):
         return {"title": fallback}
@@ -685,15 +615,13 @@ def chat_title(req: ChatTitleReq, x_user_id: str | None = Header(default=None)) 
 
 
 @app.get("/api/chat/search")
-def chat_search(q: str, x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    return {"hits": chat_store(uid).search(q)}
+def chat_search(q: str) -> dict:
+    return {"hits": chat_store().search(q)}
 
 
 @app.get("/api/chat/export")
-def chat_export(session_id: str | None = None, x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    return chat_store(uid).export(session_id)
+def chat_export(session_id: str | None = None) -> dict:
+    return chat_store().export(session_id)
 
 
 def _collect_resources(trees: list) -> list:
@@ -711,9 +639,8 @@ def _collect_resources(trees: list) -> list:
 
 
 @app.get("/api/chat/resolve")
-def chat_resolve(refs: str, x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    trees = load_trees(user_dir(uid))
+def chat_resolve(refs: str) -> dict:
+    trees = load_trees(DATA_ROOT)
     lay = layout_mod.compute_layout(trees)
     graph = {"nodes": lay["nodes"]}
     resources = _collect_resources(trees)
@@ -730,27 +657,25 @@ def chat_resolve(refs: str, x_user_id: str | None = Header(default=None)) -> dic
         dirs.append({"id": t.get("tree_id"), "title": t.get("title", ""),
                      "icon": t.get("icon", ""), "color": t.get("color", ""),
                      "nodes": dir_nodes})
-    return {"resolved": chat_store(uid).resolve_refs(refs, graph, dirs, resources)}
+    return {"resolved": chat_store().resolve_refs(refs, graph, dirs, resources)}
 
 
 @app.get("/api/chat/suggest")
-def chat_suggest(type: str, q: str, x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    trees = load_trees(user_dir(uid))
+def chat_suggest(type: str, q: str) -> dict:
+    trees = load_trees(DATA_ROOT)
     lay = layout_mod.compute_layout(trees)
     dirs = lay["dir_order"]
     graph = {"nodes": lay["nodes"]}
     resources = _collect_resources(trees)
-    return {"items": chat_store(uid).suggest(type, q, graph, dirs, resources)}
+    return {"items": chat_store().suggest(type, q, graph, dirs, resources)}
 
 
 # ─────────────────────────── 其他板块 ───────────────────────────
 @app.get("/api/profile")
-def get_profile(x_user_id: str | None = Header(default=None)) -> dict:
-    uid = resolve_user(x_user_id)
-    p = user_dir(uid) / "profile.json"
+def get_profile() -> dict:
+    p = DATA_ROOT / "profile.json"
     if not p.exists():
-        return {"name": uid, "contact": {}, "education": [], "skills": [], "experience": [], "awards": []}
+        return {"name": "default", "contact": {}, "education": [], "skills": [], "experience": [], "awards": []}
     return _load_json(p)
 
 
@@ -781,9 +706,8 @@ def get_templates() -> list[dict]:
 
 
 @app.get("/api/fruits")
-def get_fruits(x_user_id: str | None = Header(default=None)) -> list[dict]:
-    uid = resolve_user(x_user_id)
-    trees = load_trees(user_dir(uid))
+def get_fruits() -> list[dict]:
+    trees = load_trees(DATA_ROOT)
     tree_by_id = {t["tree_id"]: t for t in trees}
     out = []
     if not PROFILES_DIR.exists():
