@@ -62,3 +62,28 @@ __pycache__/
 *.ckpt
 *.safetensors
 datasets/
+
+# === 桌面应用打包(Tauri + PyInstaller)===
+# PyInstaller 后端冻结产物(build-desktop.sh 生成)
+skill-tree/backend/build/
+skill-tree/backend/dist/
+skill-tree/backend/*.spec.bak
+# Tauri 构建产物(每个 src-tauri 内已有 .gitignore 覆盖 target/,这里兜底)
+skill-tree/desktop/src-tauri/target/
+# sidecar 复制进 src-tauri 的产物(不入库,打包时生成)
+skill-tree/desktop/src-tauri/sidecar/
+# lark-cli 二进制(打包时复制,不入库)
+skill-tree/desktop/src-tauri/resources/lark-cli
+skill-tree/desktop/src-tauri/resources/lark-cli.exe
+# 图标二进制(可选;占位图标不入库,用 cargo tauri icon 重新生成)
+skill-tree/desktop/src-tauri/icons/*.ico
+skill-tree/desktop/src-tauri/icons/*.icns
+skill-tree/desktop/src-tauri/icons/*.png
+
+# === 运行时数据(用户-specific,不入库)===
+skill-tree/data/users/*/chat_history.json
+skill-tree/data/users/*/rag_index/
+skill-tree/data/users/test*/
+# 桌面应用用户主目录数据(若打包后在开发机跑过)
+~/.skill-tree/
+

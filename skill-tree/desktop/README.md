@@ -5,6 +5,9 @@
 > 设计文档:`docs/superpowers/specs/2026-07-02-tauri-desktop-app-design.md`
 > 架构:Tauri shell(Rust)→ spawn Python sidecar(PyInstaller 冻结的 uvicorn)→ webview 加载前端 dist,用动态端口调后端;lark-cli Go 二进制打进 resources,首次解压到用户主目录。
 
+> ✅ **已验证(Windows)**：PyInstaller 冻结 sidecar(health + seed 通过)、`cargo tauri build` 产出 `.msi`(47MB)/`.exe`(35MB)、release exe 运行 sidecar 正确 spawn、数据落 `~/.skill-tree/data`。
+> ⚠️ 未验证:双击安装包外壳体验(快捷方式/关联)、前端 UI 在 webview 渲染、macOS 包(需 Mac 环境或 CI)。
+
 ---
 
 ## 一、环境前置(一次性安装)
@@ -120,6 +123,13 @@ cd desktop/src-tauri && cargo tauri dev
 ### seed 没生效(首次启动图谱空)
 - 检查 `_resolve_seed_dir()` 解析到的路径是否含 seed 文件
 - PyInstaller 打包的 seed 解包位置:`sys._MEIPASS/seed`(onefile)或 `__file__/../_internal/seed`(onedir);main.py 已兼容探测,若仍不对用 `print(_SEED_DIR)` 调试
+- **踩过的坑**:frozen 态 `Path(__file__).parent`(HERE)指向 PyInstaller 临时解压的 main.pyc 位置,不可靠。已改用 `sys.executable` 目录向上探测 `_internal/seed`。若改了打包结构重测此处。
+
+### `cargo check` 报 `on_page_load` 方法不存在(Tauri 2 API 变动)
+Tauri 2 的 `App` 上没有 `on_page_load`(那是 Tauri 1 API)。正确做法:在 `tauri::Builder` 链上用 `.on_page_load(move |webview, _payload| {...})`(builder 方法),端口经 `Arc<Mutex<Option<u16>>>` 在 setup 与 on_page_load 间共享。当前 main.rs 已是此模式。
+
+### 残留 sidecar 进程锁住 `.pyd`(PermissionError 重打)
+后台 `&` 启动的 sidecar,bash 的 `$!` 杀的是 wrapper 不是真 exe 子进程,导致 PyInstaller `_internal/*.pyd` 被锁,下次重打报 `WinError 5`。用 `netstat -ano | grep :<port>` 找真实 PID,`taskkill //F //PID <pid>` 清掉。
 
 ### SmartScreen 警告(Windows)/ Gatekeeper 拦(macOS)
 **首版不签名,这是预期的**。Windows 点"仍要运行";macOS 右键→打开。要消除需购买代码签名证书(Windows)/Apple Developer 账号公证(macOS),见 spec §7。

@@ -1,29 +1,27 @@
 # 🌳 技能树系统（Skill Tree）
 
-> 本仓库的**主体**。React + FastAPI 全栈应用：可视化知识图谱 + 清单驱动掌握度 + 成就反馈。
+> 本仓库的**主体**。React + FastAPI 全栈应用 + AI Agent：可视化知识图谱 + 清单驱动掌握度 + 成就反馈 + AI 陪伴学习。
 > 简历（`resume/`）和开源项目（`projects/`）是这棵树结出的**果实**，被节点按路径引用。
+> 可作本地 web 跑，也可打包成 [Tauri 桌面应用](desktop/README.md)（Windows .msi / macOS .dmg）。
 
 ## 技术架构
 
 ```
 skill-tree/
 ├── backend/                    FastAPI (Python)
-│   ├── main.py                 API: /api/graph, /api/task, /api/profile, /api/templates, /api/fruits
-│   ├── layout.py               DAG 布局纯函数（合并去重 + 拓扑分层 + x/y 坐标）
-│   ├── progress.py             掌握度/成就计算（验收勾选=掌握该知识点）
-│   ├── requirements.txt        fastapi, uvicorn, pydantic
-│   └── Dockerfile
+│   ├── main.py                 API: /api/graph, /api/task, /api/agent/chat(SSE), /api/ai/*, /api/rag/*
+│   ├── agent/                  AI Agent 内核(Planner→Executor→Writer + Reflexion)
+│   ├── rag/                    混合检索(源码 AST + 论文 + 图谱/简历)
+│   ├── larkpub.py              飞书文档产出(lark-cli subprocess)
+│   ├── layout.py / progress.py DAG 布局 + 掌握度纯函数
+│   ├── entry.py                PyInstaller sidecar 入口(桌面打包)
+│   └── requirements.txt        fastapi, uvicorn, pydantic
 ├── frontend/                   React + TypeScript (Vite)
-│   ├── src/
-│   │   ├── App.tsx             侧栏 SPA + hash 路由(4 板块)
-│   │   ├── SkillTree.tsx       DAG 画布：useMemo(layout) 驱动节点+SVG连线（同源→不错位）
-│   │   ├── NodeCard.tsx        节点卡片 + 知识点/验收（清单语义）
-│   │   ├── panels/             Profile / Templates / Fruit 三板块
-│   │   └── Achievement.tsx     成就花田
-│   └── Dockerfile
-├── data/                       ✏️ 数据源（后端读写，见下）
-├── tools/render.py             旧的单文件生成器（仍生成 PROGRESS.md 给 GitHub 预览）
-└── docker-compose.yml          一键起 backend(8000) + frontend(5173)
+│   └── src/                    SkillTree 画布 + 多会话 AI 对话(AgentChat) + 侧栏四板块
+├── desktop/                    Tauri 桌面 shell(打包成安装包,见 desktop/README.md)
+├── data/users/default/         ✏️ 数据源（dev 用；桌面应用复制到 ~/.skill-tree/data）
+├── tools/render.py             旧单文件生成器（仍生成 PROGRESS.md 给 GitHub 预览）
+└── docker-compose.yml          dev 一键起 backend(8000) + frontend(5173)
 ```
 
 ## 快速开始
@@ -57,15 +55,44 @@ Agent 产出的学习笔记/复习卡/周报可发布并归档到飞书知识库
 
 > 文档通过 `docs +create` 生成后用 `wiki +move` 移入选定知识库空间;未配置空间时仅生成单篇飞书文档。
 
-## 数据源（`data/`）
+## 桌面应用打包
+
+这是个 personal 应用（依赖本机 lark-cli / 本地源码 RAG，且数据含 api_key），**封装成桌面应用比部署网站更合适**。
+
+```bash
+bash scripts/build-desktop.sh      # 一键:前端 build → PyInstaller 冻结后端 → Tauri 打包
+```
+
+产出 `desktop/src-tauri/target/release/bundle/` 下的 `.msi`(Windows) / `.dmg`(macOS)。
+用户双击安装即用，数据存 `~/.skill-tree/`（升级/卸载不丢）。详见 [desktop/README.md](desktop/README.md)。
+
+## AI Agent
+
+Agent 不只是"加节点"——它有记忆、会短路、能自我校验、产出可沉淀：
+
+- **多轮记忆**：前端发最近对话历史，后端无状态注入
+- **意图短路**：闲聊单步直答，不滥用 ReAct
+- **提案闭环**：改图谱走"生成→预览→确认"，防误改
+- **Reflexion**：ReAct 答完自我校验，遗漏续跑（比基础 ReAct 高一阶）
+- **Prompt 工程**：三套分层 prompt 带 few-shot + 回归测试
+- **飞书产出**：笔记/复习卡/周报归档到知识库
+
+设计文档：[`docs/superpowers/specs/2026-07-02-agent-depth-design.md`](../docs/superpowers/specs/2026-07-02-agent-depth-design.md)
+
+## 数据源（`data/users/default/`）
+
+开发期数据源；桌面应用首次启动会把这里复制到 `~/.skill-tree/data/` 作为 seed（排除 chat_history）。
 
 ```
-data/
+data/users/default/
 ├── recommendation.json   推荐方向节点（含验收子任务）
 ├── search.json           搜索方向节点
 ├── ads.json              广告方向节点
+├── agent.json            AI Agent 方向节点
 ├── profile.json          个人信息（⚠️ 须与 resume/shared/*.tex 同步）
-└── achievements.json     成就定义
+├── achievements.json     成就定义
+├── llm_config.json       大模型配置（gitignore，含 api_key）
+└── lark_config.json      飞书归档配置（wiki_space_id）
 ```
 
 **知识点与验收**：每个学习任务可带 `verify[]` 子任务。

@@ -14,26 +14,42 @@ This file gives AI coding agents context for working in this repository.
 
 ## 架构总览
 
-全栈应用：**React(前端) + FastAPI(后端) + JSON 文件存储(多用户隔离)**。
+全栈应用 + AI Agent：**React(前端) + FastAPI(后端,含 Agent/RAG) + JSON 文件存储(单用户)**。
+可作本地 web 双进程跑，也可打包成 **Tauri 桌面应用**(Windows .msi / macOS .dmg)。
 
 ```
-skill-tree/      ← 主体（全栈应用）
-  backend/         FastAPI：API + AI 引擎 + 布局/掌握度纯函数
-  frontend/        React SPA：DAG 知识图谱 + 侧栏四板块
-  data/users/<id>/ 每用户独立数据（树/profile/成就/llm配置）
+skill-tree/      ← 主体（全栈应用 + AI Agent）
+  backend/         FastAPI：API + AI 引擎(Agent/RAG/飞书产出) + 布局/掌握度纯函数
+  frontend/        React SPA：DAG 知识图谱 + 多会话 AI 对话 + 侧栏四板块
+  desktop/         Tauri 桌面 shell（打包成安装包，见 desktop/README.md）
+  data/users/default/  单用户数据源（dev 用；桌面应用复制到 ~/.skill-tree/data）
 resume/          ← 果实（模块化 LaTeX 简历，被技能树节点引用）
 projects/        ← 果实（搜广推开源项目，已移出本仓库到父目录 ../projects/，与 Resume 同级）
 ```
 
 每个子目录有自己的 CLAUDE.md，讲该目录的架构与约定。**改某部分前先读对应子目录的 CLAUDE.md。**
 
+## 桌面应用打包
+
+本项目是 personal 应用，依赖本机资源(lark-cli / 本地源码 RAG)且数据敏感(api_key/简历)，
+**结构上不该云部署**，封装成桌面应用是正确形态。
+
+- 设计：`docs/superpowers/specs/2026-07-02-tauri-desktop-app-design.md`
+- 打包手册：`skill-tree/desktop/README.md`（环境前置 / 一键脚本 / 报错排查）
+- 一键打包：`bash skill-tree/scripts/build-desktop.sh`（前端 build → PyInstaller 冻结 → Tauri 打包）
+- 架构：PyInstaller 冻结 Python 后端成 sidecar → Tauri shell spawn(动态端口) + lark-cli 打进 resources → webview 加载前端 dist
+
+**已验证**（Windows）：PyInstaller 冻结 sidecar health 通过、seed 生效、cargo tauri build 产出 .msi/.exe、release exe 运行 sidecar 正确 spawn。
+
 ## Repository Structure
 
 - `skill-tree/` — **主体**。详见 [skill-tree/CLAUDE.md](skill-tree/CLAUDE.md)
-  - `backend/` — FastAPI。详见 [skill-tree/backend/CLAUDE.md](skill-tree/backend/CLAUDE.md)
+  - `backend/` — FastAPI + Agent 内核。详见 [skill-tree/backend/CLAUDE.md](skill-tree/backend/CLAUDE.md)
   - `frontend/` — React+TS。详见 [skill-tree/frontend/CLAUDE.md](skill-tree/frontend/CLAUDE.md)
-  - `data/users/<id>/` — 用户数据（方向树 + profile.json + achievements.json + llm_config.json）
+  - `desktop/` — Tauri 桌面 shell。详见 [skill-tree/desktop/README.md](skill-tree/desktop/README.md)
+  - `data/users/default/` — 单用户数据（方向树 + profile.json + achievements.json + llm_config.json + lark_config.json）
   - `tools/render.py` — 旧单文件生成器，仅用于生成 `dist/PROGRESS.md`(GitHub 预览)
+  - `docs/superpowers/` — 设计 spec + 实现计划（brainstorming/writing-plans 产出）
 - `resume/` — **果实**。模块化 LaTeX 简历。详见 [resume/CLAUDE.md](resume/CLAUDE.md)
   - `shared/` 素材单一数据源 · `profiles/` 岗位组装 · `templates/` 7套模板 · `build/` 编译
 - `projects/` — 搜广推开源项目（DeepCTR-Torch, DeepMatch, FuxiCTR 等），**已移出本仓库**到 `../projects/`（父目录，与 Resume 同级）。后端 `PROJECTS_DIR` 默认指向该处
