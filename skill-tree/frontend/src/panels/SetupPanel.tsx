@@ -1,18 +1,15 @@
 import { useEffect, useState } from 'react'
-import { api, getUserId, setUserId, getLarkConfig, listWikiSpaces, setWikiSpace, type UserInfo } from '../api'
+import { api, getLarkConfig, listWikiSpaces, setWikiSpace } from '../api'
 import type { Provider, LlmConfig } from '../types'
 
 interface Props {
-  onUserChanged: () => void   // 用户切换后重载所有数据
   onDone: () => void          // 完成初始化，跳转技能树
 }
 
-const STEPS = ['选择用户', '配置模型', '生成技能树'] as const
+const STEPS = ['配置模型', '生成技能树'] as const
 
-export function SetupPanel({ onUserChanged, onDone }: Props) {
+export function SetupPanel({ onDone }: Props) {
   const [step, setStep] = useState(0)
-  const [users, setUsers] = useState<UserInfo[]>([])
-  const [newName, setNewName] = useState('')
   const [providers, setProviders] = useState<Provider[]>([])
   const [cfg, setCfg] = useState<LlmConfig>({ provider: '', base_url: '', api_key: '', model: '' })
   const [testing, setTesting] = useState(false)
@@ -29,9 +26,8 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
   const [spaceErr, setSpaceErr] = useState('')
   const [spaceBusy, setSpaceBusy] = useState(false)
 
-  // 加载用户列表 + 供应商 + 当前 LLM 配置
+  // 加载供应商 + 当前 LLM 配置
   useEffect(() => {
-    api.users().then(setUsers).catch(() => {})
     api.providers().then(setProviders).catch(() => {})
     api.getLlmConfig().then(setCfg).catch(() => {})
     getLarkConfig().then(c => setCurSpace(c.wiki_space_id)).catch(() => {})
@@ -47,18 +43,6 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
     finally { setSpaceBusy(false) }
   }
 
-  const pickUser = (id: string) => { setUserId(id); onUserChanged() }
-  const createAndPick = async () => {
-    if (!newName.trim()) return
-    try {
-      await api.createUser(newName.trim())
-      setUserId(newName.trim())
-      onUserChanged()
-      setUsers(await api.users())
-      setStep(1)
-    } catch (e: any) { setError(String(e.message || e)) }
-  }
-
   const pickProvider = (p: Provider) => {
     setCfg(c => ({ ...c, provider: p.id, base_url: p.base_url, model: p.model }))
     setModels([])   // 切供应商清空已拉取的模型列表
@@ -66,7 +50,7 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
   }
   const saveCfg = async () => {
     await api.saveLlmConfig(cfg)
-    setStep(2)
+    setStep(1)
   }
   const testCfg = async () => {
     setTesting(true); setTestMsg(null)
@@ -106,7 +90,7 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
   const apply = async () => {
     if (!genResult) return
     await api.applyTree(genResult.trees, genResult.profile)
-    onUserChanged()
+    window.dispatchEvent(new Event('refresh-graph'))
     onDone()
   }
 
@@ -114,7 +98,7 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
     <section className="panel active">
       <div className="panel-head">
         <h2 className="serif panel-title">⚙️ 设置</h2>
-        <p className="panel-sub">用户切换 · 大模型配置 · AI 生成/重建技能树</p>
+        <p className="panel-sub">大模型配置 · AI 生成/重建技能树</p>
       </div>
 
       <div className="setup-steps">
@@ -128,30 +112,8 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
 
       {error && <div className="setup-error">⚠ {error}</div>}
 
-      {/* Step 0: 用户 */}
+      {/* Step 0: LLM 配置 */}
       {step === 0 && (
-        <div className="setup-card">
-          <h3 className="psec">选择已有用户</h3>
-          <div className="user-grid">
-            {users.map(u => (
-              <button key={u.id} className={`user-chip ${getUserId() === u.id ? 'active' : ''}`} onClick={() => pickUser(u.id)}>
-                {u.name} <span className="uid">{u.id}</span>
-                {getUserId() === u.id && <span className="cur">当前</span>}
-              </button>
-            ))}
-          </div>
-          <h3 className="psec" style={{ marginTop: 24 }}>或新建用户</h3>
-          <div className="inline-form">
-            <input className="field" value={newName} onChange={e => setNewName(e.target.value)} placeholder="用户名（字母/数字/中文）" />
-            <button className="btn" onClick={createAndPick} disabled={!newName.trim()}>新建并进入 →</button>
-          </div>
-          <div className="setup-hint">当前用户：<b>{getUserId()}</b>。选好或建好后点「下一步」。</div>
-          <button className="btn primary" style={{ marginTop: 16 }} onClick={() => setStep(1)}>下一步：配置模型 →</button>
-        </div>
-      )}
-
-      {/* Step 1: LLM 配置 */}
-      {step === 1 && (
         <div className="setup-card">
           <h3 className="psec">选择供应商</h3>
           <div className="provider-grid">
@@ -190,8 +152,8 @@ export function SetupPanel({ onUserChanged, onDone }: Props) {
         </div>
       )}
 
-      {/* Step 2: 生成树 */}
-      {step === 2 && (
+      {/* Step 1: 生成树 */}
+      {step === 1 && (
         <div className="setup-card">
           <h3 className="psec">描述你的目标岗位 / 粘贴 JD</h3>
           <textarea className="field ta" value={jd} onChange={e => setJd(e.target.value)} rows={8}

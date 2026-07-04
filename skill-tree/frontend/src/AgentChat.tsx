@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { api, getUserId } from './api'
+import { api } from './api'
 import type { ChatMessage as Msg, ChatSession, AgentEvent } from './types'
 import { ChatMessageView } from './ChatMessage'
 import { ChatToolbar } from './ChatToolbar'
@@ -11,7 +11,7 @@ interface Props {
   onClose?: () => void   // 收起 AI 栏（顶栏按钮触发）
 }
 
-const CACHE_KEY = (uid: string) => `chat_${uid}`
+const CACHE_KEY = 'chat_default'
 
 /**
  * AI 对话区：桌面端常驻右侧 dock，移动端 #chat 全屏 page。
@@ -26,12 +26,11 @@ export function AgentChat({ onClose }: Props) {
   const [collapsed, setCollapsed] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const uid = getUserId()
   const current = sessions.find(s => s.id === currentId)
 
   // 首屏加载：localStorage 缓存秒开 → 后端校正
   useEffect(() => {
-    const cached = localStorage.getItem(CACHE_KEY(uid))
+    const cached = localStorage.getItem(CACHE_KEY)
     if (cached) {
       try {
         const c = JSON.parse(cached)
@@ -43,13 +42,13 @@ export function AgentChat({ onClose }: Props) {
       if (h.sessions.length === 0) newSession()
     }).catch(() => {})
     // eslint-disable-next-line
-  }, [uid])
+  }, [])
 
   // 双写：sessions 变化时同步后端 + 缓存
   const sync = useCallback((newSessions: ChatSession[], newCurrent: string | null) => {
-    localStorage.setItem(CACHE_KEY(uid), JSON.stringify({ sessions: newSessions, current_session_id: newCurrent }))
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ sessions: newSessions, current_session_id: newCurrent }))
     api.chatSync(newSessions, newCurrent).catch(() => {})
-  }, [uid])
+  }, [])
 
   const newSession = useCallback(() => {
     const sid = `s_${Date.now()}`

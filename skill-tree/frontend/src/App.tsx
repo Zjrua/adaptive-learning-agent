@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import type { Graph, Profile, Template, Fruit, Provider, LlmConfig } from './types'
-import { api, getUserId } from './api'
+import { api } from './api'
 import { SkillTree } from './SkillTree'
 import { ProfilePanel } from './panels/ProfilePanel'
 import { TemplatesPanel } from './panels/TemplatesPanel'
@@ -58,11 +58,6 @@ export default function App() {
       location.hash = 'setup'
     }
   }, [graph, route])
-
-  const onUserChanged = useCallback(() => {
-    setProfile(null); setTemplates([]); setFruits([])
-    setReloadKey(k => k + 1)
-  }, [])
 
   useEffect(() => {
     if (route === 'profile' && !profile) api.profile().then(setProfile).catch(() => {})
@@ -130,7 +125,7 @@ export default function App() {
               <div className="panel active">
                 <div className="panel-head">
                   <h2 className="serif panel-title">知识图谱</h2>
-                  <p className="panel-sub">所有方向汇于一棵树 · <b>基础在上，向下生长</b> · 当前用户 <b>{getUserId()}</b></p>
+                  <p className="panel-sub">所有方向汇于一棵树 · <b>基础在上，向下生长</b></p>
                 </div>
                 {graph.is_new_user ? (
                   <div className="empty-state">
@@ -152,7 +147,7 @@ export default function App() {
               </div>
             </>
           )}
-          {(route === 'setup' || route === 'settings') && <SetupPanel onUserChanged={onUserChanged} onDone={() => go('tree')} />}
+          {(route === 'setup' || route === 'settings') && <SetupPanel onDone={() => go('tree')} />}
           {route === 'profile' && <ProfilePanel profile={profile} />}
           {route === 'templates' && <TemplatesPanel templates={templates} />}
           {route === 'fruit' && <FruitPanel fruits={fruits} />}

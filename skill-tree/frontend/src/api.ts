@@ -1,11 +1,13 @@
 import type { Graph, Profile, Template, Fruit, AgentEvent, ChatHistory, ChatSession, SearchHit, Provider, LlmConfig, NodeSpec, Task } from './types'
 
-const BASE = ''   // 同源(开发走 vite proxy /api → :8000)
+// Tauri 打包后由 shell 注入端口(window.__SKILLTREE_PORT__);开发期空串走 vite proxy
+const PORT = (typeof window !== 'undefined' && (window as any).__SKILLTREE_PORT__) || ''
+export const BASE = PORT ? `http://127.0.0.1:${PORT}` : ''
 
 export async function applyNode(treeId: string, node: NodeSpec, branchId?: string): Promise<{ ok: boolean }> {
   const res = await fetch(`${BASE}/ai/apply-node`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': getUserId() },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tree_id: treeId, node, branch_id: branchId }),
   })
   return res.json()
@@ -14,50 +16,41 @@ export async function applyNode(treeId: string, node: NodeSpec, branchId?: strin
 export async function applyTasks(treeId: string, nodeId: string, tasks: Task[]): Promise<{ ok: boolean }> {
   const res = await fetch(`${BASE}/ai/apply-tasks`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': getUserId() },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tree_id: treeId, node_id: nodeId, tasks }),
   })
   return res.json()
 }
 
-const USER_KEY = 'skilltree_user_id'
-export const getUserId = () => localStorage.getItem(USER_KEY) || 'default'
-export const setUserId = (id: string) => localStorage.setItem(USER_KEY, id)
-
 // ── 飞书知识库归档配置 ──
 export async function listWikiSpaces(): Promise<{ ok: boolean; spaces: { space_id: string; name: string }[]; error?: string }> {
-  const res = await fetch(`${BASE}/api/lark/spaces`, { headers: { 'X-User-Id': getUserId() } })
+  const res = await fetch(`${BASE}/api/lark/spaces`)
   return res.json()
 }
 
 export async function setWikiSpace(spaceId: string): Promise<{ ok: boolean }> {
   const res = await fetch(`${BASE}/api/lark/config`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': getUserId() },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ wiki_space_id: spaceId }),
   })
   return res.json()
 }
 
 export async function getLarkConfig(): Promise<{ wiki_space_id: string | null }> {
-  const res = await fetch(`${BASE}/api/lark/config`, { headers: { 'X-User-Id': getUserId() } })
+  const res = await fetch(`${BASE}/api/lark/config`)
   return res.json()
 }
 
-/** 带 X-User-Id 头的 fetch */
-function authHeaders(extra: Record<string, string> = {}): Record<string, string> {
-  return { 'X-User-Id': getUserId(), ...extra }
-}
-
 async function getJson<T>(url: string): Promise<T> {
-  const r = await fetch(BASE + url, { headers: authHeaders() })
+  const r = await fetch(BASE + url)
   if (!r.ok) throw new Error(`${url}: ${r.status} ${await r.text().catch(() => '')}`)
   return r.json()
 }
 
 async function postJson<T>(url: string, body: any): Promise<T> {
   const r = await fetch(BASE + url, {
-    method: 'POST', headers: authHeaders({ 'Content-Type': 'application/json' }),
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
   const text = await r.text()
@@ -66,7 +59,6 @@ async function postJson<T>(url: string, body: any): Promise<T> {
 }
 
 // Provider/LlmConfig 类型已移至 types.ts（api.ts 内部从上方 import type 引用）
-export interface UserInfo { id: string; name: string }
 
 export const api = {
   graph: () => getJson<Graph>('/api/graph'),
@@ -76,21 +68,17 @@ export const api = {
 
   patchTask(treeId: string, nodeId: string, taskId: string, done: boolean, isVerify: boolean): Promise<Graph> {
     return fetch(BASE + '/api/task', {
-      method: 'PATCH', headers: authHeaders({ 'Content-Type': 'application/json' }),
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tree_id: treeId, node_id: nodeId, task_id: taskId, done, is_verify: isVerify }),
     }).then(r => r.json())
   },
-
-  // ── 用户管理 ──
-  users: () => getJson<UserInfo[]>('/api/users'),
-  createUser: (userId: string) => postJson<UserInfo>('/api/users', { user_id: userId }),
 
   // ── LLM 配置 ──
   providers: () => getJson<Provider[]>('/api/providers'),
   getLlmConfig: () => getJson<LlmConfig>('/api/llm-config'),
   saveLlmConfig: (cfg: LlmConfig) =>
     fetch(BASE + '/api/llm-config', {
-      method: 'PUT', headers: authHeaders({ 'Content-Type': 'application/json' }),
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(cfg),
     }).then(r => r.json()),
   testLlmConfig: (cfg: LlmConfig) => postJson<{ ok: boolean; message: string }>('/api/llm-config/test', cfg),
@@ -114,7 +102,7 @@ export const api = {
   ): Promise<void> {
     return fetch(BASE + '/api/agent/chat', {
       method: 'POST',
-      headers: authHeaders({ 'Content-Type': 'application/json' }),
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message, history }),
     }).then(async (r) => {
       if (!r.ok) throw new Error(await r.text().catch(() => ''))
