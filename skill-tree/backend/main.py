@@ -50,7 +50,9 @@ def _user_data_root() -> Path:
 
 
 def seed_if_empty(target: Path, seed: Path) -> None:
-    """target 为空(无任何文件)时,从 seed 复制初始数据;否则跳过(幂等)。"""
+    """target 为空(无任何文件)时,从 seed 复制初始数据;否则跳过(幂等)。
+    只复制文件(不递归目录,如 rag_index 是用户特定的,不 seed);
+    跳过 chat_history.json(不继承演示对话历史)。"""
     if not seed.exists() or not seed.is_dir():
         return
     if target.exists() and any(target.iterdir()):
@@ -58,7 +60,7 @@ def seed_if_empty(target: Path, seed: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
     import shutil
     for p in seed.iterdir():
-        if p.is_file():
+        if p.is_file() and p.name != "chat_history.json":
             shutil.copy2(p, target / p.name)
 
 
