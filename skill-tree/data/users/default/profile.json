@@ -44,7 +44,7 @@
         "Prompt 工程",
         "function calling"
       ],
-      "url": "https://github.com/Zjrua/Internship-preparation",
+      "url": "https://github.com/Zjrua/Skill_Tree",
       "desc": "将技能树 AI 从三个无状态单轮生成器,升级成 Planner→Executor→Writer 分层、ReAct 推理、工具增强、能自我校验、产出可沉淀的完整 Agent。",
       "highlights": [
         "Agent 内核:多轮记忆(前端裁剪发历史,服务端无状态)、Planner 意图短路(闲聊直答)、node_proposal 提案闭环(生成→预览→确认防误改)、Reflexion 自校验(ReAct 草稿后自我校验,遗漏续跑 1 轮)",
