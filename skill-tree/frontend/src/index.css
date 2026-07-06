@@ -84,14 +84,20 @@ body {
   font-family: 'Fraunces', serif; font-weight: 900; font-size: 10px; }
 
 /* 主体：主内容 + AI 右栏。.body 限定视口高度(顶栏 56px 之下),内部各自滚动。
-   grid-template-rows: 1fr + overflow:hidden 防止 .main 的高内容撑破 grid 行高。 */
+   resizer 绝对定位贴在列边界,不占 grid 单元格,避免把 aside 挤到第二行。 */
 .body { flex: 1; display: grid; min-height: 0; height: calc(100vh - 56px);
-  grid-template-columns: 1fr; grid-template-rows: 1fr; overflow: hidden; }
+  grid-template-columns: 1fr; grid-template-rows: 1fr; overflow: hidden; position: relative; }
 .body.has-ai { grid-template-columns: 1fr var(--ai-width, 400px); }
-.main { padding: 32px 40px 80px; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+.main { padding: 32px 40px 80px; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; grid-column: 1; grid-row: 1; }
+.body.has-ai .main { padding-right: 12px; }
+.ai-aside { grid-column: 2; grid-row: 1; }
 
-/* 可拖动分隔条 */
-.ai-resizer { width: 6px; cursor: col-resize; background: transparent; position: relative; flex-shrink: 0; z-index: 10; }
+/* 可拖动分隔条:绝对定位贴在两列边界,不参与 grid 布局 */
+.ai-resizer { position: absolute; top: 0; bottom: 0; right: var(--ai-width, 400px); width: 8px; margin-right: -4px;
+  cursor: col-resize; background: transparent; z-index: 10; }
+.ai-resizer::after { content: ''; position: absolute; left: 3px; top: 20%; bottom: 20%; width: 2px;
+  background: var(--line-soft); border-radius: 2px; transition: background .2s; }
+.ai-resizer:hover::after { background: var(--jade); box-shadow: 0 0 8px var(--jade-glow); }
 .ai-resizer::after { content: ''; position: absolute; left: 2px; top: 20%; bottom: 20%; width: 2px;
   background: var(--line-soft); border-radius: 2px; transition: background .2s; }
 .ai-resizer:hover::after { background: var(--jade); box-shadow: 0 0 8px var(--jade-glow); }
