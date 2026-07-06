@@ -35,25 +35,22 @@
   ],
   "experience": [
     {
-      "title": "技能树学习系统 · AI Agent 架构与桌面应用",
+      "title": "技能树学习系统 · AI Agent 架构",
       "period": "2026.06 — 至今",
-      "role": "独立开发 · 全栈 + Agent 设计",
+      "role": "独立设计 · Agent 架构与实现",
       "tech": [
-        "FastAPI",
-        "React",
-        "Tauri",
         "ReAct",
         "RAG",
-        "PyInstaller"
+        "Prompt 工程",
+        "function calling"
       ],
       "url": "https://github.com/Zjrua/Internship-preparation",
-      "desc": "一个状态感知的学习操作系统:技能树管「学什么+学到哪」,AI Agent 管「怎么学+产出什么」,飞书管「沉淀到哪」。从三个无状态单轮生成器升级成 Planner→Executor→Writer 分层、ReAct 推理、工具增强、能自我校验、产出可沉淀的完整 Agent;并封装成 Tauri 桌面应用(Windows/macOS)。",
+      "desc": "将技能树 AI 从三个无状态单轮生成器,升级成 Planner→Executor→Writer 分层、ReAct 推理、工具增强、能自我校验、产出可沉淀的完整 Agent。",
       "highlights": [
         "Agent 内核:多轮记忆(前端裁剪发历史,服务端无状态)、Planner 意图短路(闲聊直答)、node_proposal 提案闭环(生成→预览→确认防误改)、Reflexion 自校验(ReAct 草稿后自我校验,遗漏续跑 1 轮)",
         "Prompt 工程:三套分层 prompt 带 few-shot + ReAct 解析正则化容错 + 黄金用例回归测试;混合工具协议(原生 function calling 优先,指令式回退)适配 5 家 OpenAI 兼容供应商",
         "RAG 混合检索:多路召回(源码 AST 向量 + 论文 abstract + 图谱/简历精确),增量索引,JSONL 存向量守零依赖(不引向量库)",
-        "飞书产出闭环:Agent 产出笔记/复习卡/周报 → docs+create → wiki+move 归档知识库(三模板差异化)",
-        "桌面应用:PyInstaller 冻结 Python 后端成 sidecar,Tauri shell spawn(动态端口)+ lark-cli 打包,Windows 已验证发布(.msi)"
+        "飞书产出闭环:Agent 产出笔记/复习卡/周报 → 飞书文档 → 归档知识库(三模板差异化)"
       ]
     },
     {
