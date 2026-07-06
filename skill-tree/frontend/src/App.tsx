@@ -123,7 +123,7 @@ export default function App() {
       </header>
 
       {/* 主体：主内容 + 可拖动 AI 右栏 */}
-      <div className="body" style={{ '--ai-width': `${aiWidth}px` } as React.CSSProperties}>
+      <div className={`body ${showAi ? 'has-ai' : ''}`} style={{ '--ai-width': `${aiWidth}px` } as React.CSSProperties}>
         <main className="main">
           {route === 'tree' && graphErr && (
             <div className="panel active">

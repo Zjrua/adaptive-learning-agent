@@ -46,7 +46,8 @@ body {
 .mono { font-family: 'JetBrains Mono', monospace; }
 
 /* ─── 应用骨架：顶栏 + 主体(主内容 + 可拖动 AI 右栏) ─── */
-.app { display: flex; flex-direction: column; min-height: 100vh; }
+/* height: 100vh + overflow:hidden 锁死视口,防止主内容(DAG 画布)撑高导致 AI 侧栏漂移 */
+.app { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
 
 /* 顶栏 */
 .topbar {
@@ -82,11 +83,12 @@ body {
 .ring-txt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   font-family: 'Fraunces', serif; font-weight: 900; font-size: 10px; }
 
-/* 主体：主内容 + AI 右栏。有 AI 时两列，无 AI(收起) 时单列。 */
-.body { flex: 1; display: grid; min-height: 0; }
-.body:has(.ai-aside) { grid-template-columns: 1fr var(--ai-width, 400px); }
-.body:not(:has(.ai-aside)) { grid-template-columns: 1fr; }
-.main { padding: 32px 40px 80px; min-width: 0; overflow-x: hidden; }
+/* 主体：主内容 + AI 右栏。.body 限定视口高度(顶栏 56px 之下),内部各自滚动。
+   grid-template-rows: 1fr + overflow:hidden 防止 .main 的高内容撑破 grid 行高。 */
+.body { flex: 1; display: grid; min-height: 0; height: calc(100vh - 56px);
+  grid-template-columns: 1fr; grid-template-rows: 1fr; overflow: hidden; }
+.body.has-ai { grid-template-columns: 1fr var(--ai-width, 400px); }
+.main { padding: 32px 40px 80px; min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; }
 
 /* 可拖动分隔条 */
 .ai-resizer { width: 6px; cursor: col-resize; background: transparent; position: relative; flex-shrink: 0; z-index: 10; }
@@ -96,7 +98,7 @@ body {
 
 /* AI 右栏 */
 .ai-aside {
-  min-width: 0; height: calc(100vh - 56px); position: sticky; top: 56px;
+  min-width: 0; min-height: 0;
   background: linear-gradient(180deg, var(--ink-2) 0%, var(--ink) 100%);
   border-left: 1px solid var(--line-soft);
   display: flex; flex-direction: column; overflow: hidden;
