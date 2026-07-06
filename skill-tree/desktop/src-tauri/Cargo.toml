@@ -8,7 +8,7 @@ description = "技能树学习系统桌面应用"
 tauri-build = { version = "2.0", features = [] }
 
 [dependencies]
-tauri = { version = "2.0", features = [] }
+tauri = { version = "2.0", features = ["devtools"] }
 tauri-plugin-shell = "2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
