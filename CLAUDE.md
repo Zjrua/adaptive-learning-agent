@@ -7,7 +7,9 @@ This file gives AI coding agents context for working in this repository.
 实习备战系统。Owner: ***REMOVED*** (Zjrua)，***REMOVED***应用统计研究生(2025-2028)。
 **技能树是主体**——可视化学习路径 + 掌握度追踪 + AI 生成；简历和开源项目是**果实**。
 
-> 📄 **[系统设计文档（飞书）](https://my.feishu.cn/docx/M6FGdMITtoZenZxS8X5cRjXXnIQ)** — Agent 系统的完整设计思路与技术路线。本地设计文档：
+> 📄 **[系统设计文档（飞书）](https://my.feishu.cn/docx/M6FGdMITtoZenZxS8X5cRjXXnIQ)** — Agent 系统的完整设计思路与技术路线。
+> 📄 **[Agent 实现详解（飞书）](https://my.feishu.cn/docx/T9D6dGuENoWdl7xk3onckfWNncg)** — 代码级实现细节（Planner/Executor/Writer、Reflexion、协议适配、RAG、Prompt 工程、测试体系）。与设计文档互补。
+> 本地设计文档：
 > - 设计 spec：`docs/design/2026-07-02-agent-depth-design.md`（最新：记忆/短路/提案/Reflexion/Prompt/doc→wiki）
 > - 实现计划：`docs/plans/2026-07-02-agent-depth.md`
 > - 原始设计：`docs/design/2026-06-30-llm-agent-design.md`

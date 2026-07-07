@@ -47,6 +47,12 @@ skill-tree/backend/*.pyc
 # Per-user LLM API keys (NEVER commit) — contains api_key secrets
 skill-tree/data/llm_config.json
 
+# 实测脚本本地配置(含 api_key,绝不入库)+ 实测产物
+eval/config.local.json
+eval/results/
+eval/rag_index_test/
+eval/*.png
+
 # Python cache
 __pycache__/
 *.pyc
