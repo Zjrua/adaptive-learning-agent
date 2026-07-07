@@ -206,11 +206,119 @@ def test_loop_reflect_capped_accepts_second_draft():
 
 
 def test_pick_doc_type_by_keyword():
-    """含'复习/背/默写'→review,含'周报/本周/总结'→weekly,否则 note。"""
+    """含'复习/自测/review'→review,含'周报/本周/总结'→weekly,否则 note。"""
     from agent.loop import _pick_doc_type
     assert _pick_doc_type("帮我生成复习卡") == "review"
-    assert _pick_doc_type("我要背一下 DeepFM 结构") == "review"
+    assert _pick_doc_type("帮我自测 DeepFM 结构") == "review"
     assert _pick_doc_type("整理本周学习周报") == "weekly"
     assert _pick_doc_type("做个月度总结") == "weekly"
     assert _pick_doc_type("整理个 DeepFM 笔记") == "note"
     assert _pick_doc_type("讲讲 DCN") == "note"
+
+
+# ─────────────── P0-#1: 原生 function calling 路径 ───────────────
+
+def test_loop_native_path_uses_openai_tool_messages(monkeypatch):
+    """供应商支持原生 function calling 时，全程走原生路径：
+    assistant 消息带 tool_calls，工具结果用 role=tool + tool_call_id 回填。
+    不再伪造 ReAct 文本 Observation。"""
+    from agent import protocol
+    monkeypatch.setattr(protocol, "detect_native_support", lambda cfg: True)
+
+    native_tc = [{"id": "call_1", "type": "function",
+                  "function": {"name": "get_progress", "arguments": "{}"}}]
+    responses = [
+        {"content": '{"intent":"query","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
+        {"content": "", "tool_calls": native_tc},          # Executor 第1轮：原生工具调用
+        {"content": "整体进度 45%。", "tool_calls": []},   # Executor 第2轮：final answer
+    ]
+    # 自定义 chat_fn：记录每次调用时 messages 的深拷贝（避免 list 引用污染）
+    import copy
+    snapshots: list[list[dict]] = []
+    def capturing_chat(cfg, messages, tools=None, stream=False, response_format=None):
+        snapshots.append(copy.deepcopy(messages))
+        if responses:
+            return responses.pop(0) if len(responses) > 1 else responses[0]
+        return {"content": "", "tool_calls": []}
+
+    ctx = _ctx(graph={"nodes": [], "overview": {"overall_pct": 45, "mastered_points": 0, "total_points": 0}})
+    events = list(run_agent(ctx, "我学到哪了", chat_fn=capturing_chat,
+                            cfg={"base_url": "x", "api_key": "y"}))
+    # snapshots[0]=Planner, [1]=Executor第1轮, [2]=Executor第2轮(基于工具结果)
+    # 第2轮 messages 应含 role=tool 回填 + assistant 带 tool_calls（OpenAI 标准）
+    exec_round2 = snapshots[2]
+    roles = [m["role"] for m in exec_round2]
+    assert "tool" in roles   # P0-#1 关键：原生路径用 tool role 而非文本 Observation
+    asst_with_tc = [m for m in exec_round2
+                    if m["role"] == "assistant" and m.get("tool_calls")]
+    assert asst_with_tc     # assistant 消息带原始 tool_calls 结构
+    tool_msg = [m for m in exec_round2 if m["role"] == "tool"][0]
+    assert tool_msg.get("tool_call_id") == "call_1"   # OpenAI 标准：tool_call_id 关联
+    # 第1轮 messages 不该有 tool role（还没回填）
+    exec_round1 = snapshots[1]
+    assert not any(m["role"] == "tool" for m in exec_round1)
+    # 事件序列正常
+    assert any(e["type"] == "tool_call" and e["action"] == "get_progress" for e in events)
+    assert any(e["type"] == "tool_result" for e in events)
+    full = "".join(e.get("content", "") for e in events if e["type"] == "delta")
+    assert "45%" in full
+
+
+def test_loop_native_path_executes_all_tool_calls(monkeypatch):
+    """原生路径返回多个 tool_calls 时，全部执行（不再只取第一个）。"""
+    from agent import protocol
+    monkeypatch.setattr(protocol, "detect_native_support", lambda cfg: True)
+
+    multi_tc = [
+        {"id": "call_1", "type": "function",
+         "function": {"name": "get_progress", "arguments": "{}"}},
+        {"id": "call_2", "type": "function",
+         "function": {"name": "get_next", "arguments": '{"node_id":"deepfm"}'}},
+    ]
+    fake = FakeChat([
+        {"content": '{"intent":"query","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
+        {"content": "", "tool_calls": multi_tc},
+        {"content": "查完了。", "tool_calls": []},
+    ])
+    ctx = _ctx(graph={"nodes": [], "overview": {}})
+    events = list(run_agent(ctx, "进度和下一步", chat_fn=fake,
+                            cfg={"base_url": "x", "api_key": "y"}))
+    actions = [e["action"] for e in events if e["type"] == "tool_call"]
+    assert "get_progress" in actions and "get_next" in actions   # 两个都执行了
+
+
+# ─────────────── P0-#3: ReAct 格式不符重试一次 ───────────────
+
+def test_loop_malformed_react_retries_once(monkeypatch):
+    """模型输出既无 Action 也无 Final Answer（格式崩坏）→ 提示重试一次，仍失败才当 final。"""
+    fake = FakeChat([
+        {"content": '{"intent":"query","sub_tasks":[],"needs_doc":false}', "tool_calls": []},
+        {"content": "嗯，让我想想这个问题。"},   # 格式不符，触发重试
+        {"content": "Thought: ok\nFinal Answer: 正确答案。"},   # 重试后正常
+    ])
+    ctx = _ctx()
+    events = list(run_agent(ctx, "DeepFM 是什么", chat_fn=fake,
+                            cfg={"base_url": "x", "api_key": "y"}))
+    # 应有 thinking 事件提示格式重试
+    thinking_texts = [e.get("content", "") for e in events if e["type"] == "thinking"]
+    assert any("格式" in t for t in thinking_texts)
+    full = "".join(e.get("content", "") for e in events if e["type"] == "delta")
+    assert "正确答案" in full
+
+
+# ─────────────── P1-#4: Planner 顺带输出 doc_type ───────────────
+
+def test_loop_planner_doc_type_passes_to_writer():
+    """Planner 返回 doc_type 时，Writer 直接用，不调 _pick_doc_type。"""
+    fake = FakeChat([
+        {"content": '{"intent":"produce","sub_tasks":[],"needs_doc":true,"doc_type":"weekly"}',
+         "tool_calls": []},
+        {"content": "Thought: ok\nFinal Answer: 已收集素材。", "tool_calls": []},
+        {"content": "<title>周报</title><p>本周内容</p>", "tool_calls": []},   # Writer
+    ])
+    ctx = _ctx()
+    events = list(run_agent(ctx, "整理个周报", chat_fn=fake,
+                            cfg={"base_url": "x", "api_key": "y"}))
+    doc_cards = [e for e in events if e["type"] == "doc_card"]
+    assert doc_cards
+    assert doc_cards[0]["doc_type"] == "weekly"   # 来自 Planner，非关键词判断

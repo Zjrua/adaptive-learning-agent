@@ -64,12 +64,12 @@ def parse_react(text: str) -> dict:
 
 
 # 默认 chat_fn：真实工具调用协议
-def _default_chat(cfg, messages, tools, stream=False):
+def _default_chat(cfg, messages, tools, stream=False, response_format=None):
     from agent.protocol import chat_with_tools, chat_stream
     if stream:
         # 流式：返回迭代器，逐 token yield {type:delta}
         return chat_stream(cfg, messages, tools)
-    res = chat_with_tools(cfg, messages, tools)
+    res = chat_with_tools(cfg, messages, tools, response_format=response_format)
     return res
 
 
@@ -82,9 +82,11 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
 
     # ── 1. Planner 意图分流 ──
     sys_p = render_planner(progress_summary=graph_summary, user_input=user_input)
+    json_fmt = _json_fmt(cfg)   # 探测 JSON mode（支持才传，否则 None 走 _safe_intent 容错）
     try:
         pres = chat_fn(cfg, [{"role": "system", "content": sys_p},
-                             {"role": "user", "content": user_input}], tools=None)
+                             {"role": "user", "content": user_input}], tools=None,
+                       response_format=json_fmt)
         intent = _safe_intent(pres.get("content", ""))
     except Exception:
         intent = {"intent": "query", "needs_doc": False}
@@ -97,7 +99,7 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
         yield {"type": "done"}
         return
 
-    # ── 2. Executor（chat 短路；其余走 ReAct）──
+    # ── 2. Executor（chat 短路；其余走 ReAct 或原生 function calling）──
     sys_e = render_executor(tools_text=tool_schema_text(tools), graph_summary=graph_summary)
     # 引用预处理：解析用户消息里的 #/@/$ 并注入上下文
     refs_text = ""
@@ -125,34 +127,93 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
             messages.append({"role": m["role"], "content": m["content"]})
     messages.append({"role": "user", "content": user_input})
 
+    # 会话级选定一条路：探测供应商是否支持原生 function calling。
+    # 支持则全程走原生（assistant tool_calls + tool role 回填），不支持则全程走 ReAct 文本。
+    # 两条路不再交叉。
+    use_native = False
+    try:
+        from agent.protocol import detect_native_support
+        use_native = detect_native_support(cfg)
+    except Exception:
+        use_native = False
+    yield {"type": "thinking", "content": f"工具协议：{'原生 function calling' if use_native else 'ReAct 文本'}"}
+
     reflect_used = False   # Reflexion 仅允许 1 轮(query/produce)
+    observations_log: list[str] = []   # P0-#2: 独立累积，不再从 messages 反推
+    format_retried = False   # P0-#3: ReAct 格式不符重试一次标志
 
     for step_i in range(max_steps):
+        # 本轮是否走原生路径：use_native 且上一轮没因原生报错降级
+        native_this_turn = use_native
         try:
-            res = chat_fn(cfg, messages, tools)
-        except Exception as e:
-            # 原生 tools 报错 → 回退到指令式
-            try:
-                res = chat_fn(cfg, messages, tools=None)
-            except Exception as e2:
-                yield {"type": "error", "content": f"模型调用失败: {e2}"}
+            res = chat_fn(cfg, messages, tools if native_this_turn else None)
+        except Exception:
+            if native_this_turn:
+                # 原生路径报错 → 本次降级 ReAct 文本（不改 use_native 标志，下次仍尝试原生）
+                native_this_turn = False
+                try:
+                    res = chat_fn(cfg, messages, tools=None)
+                except Exception as e2:
+                    yield {"type": "error", "content": f"模型调用失败: {e2}"}
+                    yield {"type": "done"}
+                    return
+            else:
+                yield {"type": "error", "content": "模型调用失败"}
                 yield {"type": "done"}
                 return
 
-        # 同时尝试原生 tool_calls 与指令式
-        calls = resolve_tool_calls(res, chat_fn)
         content = res.get("content", "")
 
-        if not calls:
-            # 走 ReAct 文本解析
-            step = parse_react(content)
+        # ── 原生路径：解析 tool_calls，按 OpenAI 标准回填 messages ──
+        if native_this_turn:
+            calls = resolve_tool_calls(res, chat_fn)
+            if calls:
+                # 执行所有工具调用（不再只取第一个）
+                # 先回填 assistant 消息（带原始 tool_calls 结构）
+                messages.append({"role": "assistant", "content": content or "",
+                                 "tool_calls": res.get("tool_calls", [])})
+                for tc in calls:
+                    action = tc.name
+                    args = tc.arguments
+                    yield {"type": "tool_call", "action": action, "arguments": args}
+                    try:
+                        tresult = execute_tool(action, args, ctx)
+                        observation = tresult.get("text", "")
+                        for ev in tresult.get("events", []):
+                            yield ev
+                    except Exception as e:
+                        observation = f"工具执行出错: {e}"
+                    observations_log.append(observation)
+                    yield {"type": "tool_result", "action": action, "content": observation}
+                    # OpenAI 标准：每个工具结果用 role=tool + tool_call_id 回填
+                    # tool_call_id 从原始 tool_calls 取（FakeChat/真实供应商都有）
+                    tc_id = _find_tool_call_id(res.get("tool_calls", []), action)
+                    messages.append({"role": "tool", "tool_call_id": tc_id,
+                                     "content": observation})
+                continue   # 进入下一轮，让模型基于工具结果继续
+
+            # 原生路径无 tool_calls → 当作 final answer
+            step = {"type": "final", "answer": content.strip()}
         else:
-            # 原生工具调用：包装成 tool 步
-            if len(calls) == 1:
-                step = {"type": "tool", "action": calls[0].name, "arguments": calls[0].arguments}
+            # ── ReAct 文本路径 ──
+            calls = resolve_tool_calls(res, chat_fn)   # 兜底：模型在 ReAct 模式仍输出 <tool_call>
+            if calls:
+                # 模型在 ReAct 模式输出了指令式工具标记 → 当工具步处理（走文本回填）
+                step = {"type": "tool", "action": calls[0].name,
+                        "arguments": calls[0].arguments}
+            elif "Action:" in content or "Final Answer:" in content:
+                step = parse_react(content)
             else:
-                # 多工具：取第一个（保持 ReAct 单步语义）
-                step = {"type": "tool", "action": calls[0].name, "arguments": calls[0].arguments}
+                # P0-#3: 既无 Action 也无 Final Answer → 格式不符，重试一次
+                if not format_retried and (step_i + 1) < max_steps:
+                    format_retried = True
+                    yield {"type": "thinking", "content": "输出格式不符，提示重新用 ReAct 格式"}
+                    messages.append({"role": "assistant", "content": content})
+                    messages.append({"role": "user",
+                                     "content": "请严格用 ReAct 格式输出：Thought/Action/Arguments 或 Thought/Final Answer。"})
+                    continue
+                # 已重试过或即将超步数 → 当 final（优雅降级）
+                step = {"type": "final", "answer": content.strip()}
 
         if step["type"] == "final":
             answer = step.get("answer", "")
@@ -162,7 +223,7 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
             # Reflexion(query/produce 才做,仅 1 轮)
             if intent.get("intent") in ("query", "produce") and not reflect_used:
                 reflect_used = True   # 先置位:即使本轮续跑,下一轮 final 也不再 reflect(封顶 1 轮)
-                ok, gap = _reflect(user_input, messages, answer, chat_fn, cfg)
+                ok, gap = _reflect(user_input, observations_log, answer, chat_fn, cfg)
                 if not ok and (step_i + 1) < max_steps:
                     yield {"type": "thinking", "content": f"自查发现遗漏: {gap}，补充中…"}
                     messages.append({"role": "assistant", "content": answer})
@@ -174,7 +235,7 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
             yield {"type": "final_done"}
             break
 
-        # 工具步
+        # 工具步（ReAct 文本路径）
         action = step["action"]
         args = step.get("arguments", {})
         yield {"type": "tool_call", "action": action, "arguments": args}
@@ -185,9 +246,10 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
                 yield ev
         except Exception as e:
             observation = f"工具执行出错: {e}"
+        observations_log.append(observation)
         yield {"type": "tool_result", "action": action, "content": observation}
 
-        # 把这一轮塞回 messages 维持多轮
+        # ReAct 文本路径：把这一轮塞回 messages 维持多轮
         messages.append({"role": "assistant", "content": content or f"Action: {action}"})
         messages.append({"role": "user", "content": f"Observation: {observation}"})
 
@@ -197,9 +259,25 @@ def run_agent(ctx: Context, user_input: str, chat_fn=_default_chat,
 
     # ── 3. Writer（条件触发）──
     if intent.get("needs_doc"):
-        yield from _run_writer(ctx, user_input, messages, chat_fn, cfg)
+        doc_type = intent.get("doc_type")
+        yield from _run_writer(ctx, user_input, messages, chat_fn, cfg, doc_type=doc_type)
 
     yield {"type": "done"}
+
+
+def _find_tool_call_id(raw_tool_calls: list, action: str) -> str:
+    """从原始 tool_calls 结构里找匹配 action 的 call id（OpenAI 标准回填用）。
+    FakeChat 可能直接传 ToolCall 对象或 dict；找不到时回退 'call_0'。"""
+    for i, tc in enumerate(raw_tool_calls or []):
+        if isinstance(tc, dict):
+            fn = tc.get("function", {})
+            if fn.get("name") == action:
+                return tc.get("id", f"call_{i}")
+        else:
+            # ToolCall dataclass
+            if getattr(tc, "name", None) == action:
+                return getattr(tc, "id", f"call_{i}")
+    return "call_0"
 
 
 def _chat_direct(user_input, history, chat_fn, cfg) -> Iterator[dict]:
@@ -225,19 +303,29 @@ def _emit_text_as_delta(text: str, chunk_size: int = 8) -> Iterator[dict]:
         yield {"type": "delta", "content": text[i:i + chunk_size]}
 
 
-def _reflect(user_input, messages, draft, chat_fn, cfg) -> tuple[bool, str]:
-    """校验草稿是否回答了问题。返回 (ok, gap)。失败回退 ok=True(不阻塞主流程)。"""
-    observations = "\n".join(m["content"].replace("Observation:", "").strip()
-                             for m in messages
-                             if m.get("role") == "user" and "Observation:" in m.get("content", ""))
-    sys_r = render_reflect(question=user_input, observations=observations[:800], draft=draft[:800])
+def _reflect(user_input, observations_log: list[str], draft, chat_fn, cfg) -> tuple[bool, str]:
+    """校验草稿是否回答了问题。返回 (ok, gap)。失败回退 ok=True(不阻塞主流程)。
+    observations_log: 工具执行结果独立累积，不再从 messages 反推（P0-#2）。"""
+    observations = "\n".join(observations_log)[:2000]
+    sys_r = render_reflect(question=user_input, observations=observations, draft=draft[:800])
+    json_fmt = _json_fmt(cfg)   # 探测 JSON mode
     try:
         res = chat_fn(cfg, [{"role": "system", "content": sys_r},
-                            {"role": "user", "content": "请输出校验 JSON。"}], tools=None)
+                            {"role": "user", "content": "请输出校验 JSON。"}], tools=None,
+                      response_format=json_fmt)
         obj = _safe_intent(res.get("content", ""))
         return bool(obj.get("ok", True)), str(obj.get("gap", ""))
     except Exception:
         return True, ""   # 回退:不阻塞
+
+
+def _json_fmt(cfg: dict) -> dict | None:
+    """探测供应商是否支持 JSON mode，支持则返回 response_format，否则 None（走容错解析）。"""
+    try:
+        from agent.protocol import detect_json_mode
+        return {"type": "json_object"} if detect_json_mode(cfg) else None
+    except Exception:
+        return None
 
 
 def _history_summary(history: list[dict]) -> str:
@@ -251,18 +339,20 @@ def _history_summary(history: list[dict]) -> str:
 
 
 def _pick_doc_type(request: str) -> str:
-    """按用户措辞判定文档类型。"""
+    """按用户措辞判定文档类型（Planner 未给 doc_type 时的兜底）。"""
     r = request
-    if any(k in r for k in ("复习", "背", "默写", "review")):
+    if any(k in r for k in ("复习", "自测", "review")):
         return "review"
     if any(k in r for k in ("周报", "本周", "总结", "weekly")):
         return "weekly"
     return "note"
 
 
-def _run_writer(ctx, user_input, executor_messages, chat_fn, cfg) -> Iterator[dict]:
+def _run_writer(ctx, user_input, executor_messages, chat_fn, cfg,
+                doc_type: str | None = None) -> Iterator[dict]:
     from agent.prompts import render_writer
-    doc_type = _pick_doc_type(user_input)
+    if not doc_type:
+        doc_type = _pick_doc_type(user_input)
     materials = "\n".join(m.get("content", "") for m in executor_messages
                           if m.get("role") == "user" and "Observation" in m.get("content", ""))
     sys_w = render_writer(materials=materials[:2000], request=user_input, doc_type=doc_type)

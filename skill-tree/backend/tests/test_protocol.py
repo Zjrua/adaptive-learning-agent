@@ -89,3 +89,62 @@ def test_resolve_tool_calls_falls_back_to_directive():
     calls = resolve_tool_calls(msg, chat_fn=None)
     assert len(calls) == 1
     assert calls[0].name == "get_node"
+
+
+# ─────────────── P2-#8: JSON mode 探测 + response_format 透传 ───────────────
+
+def test_chat_with_tools_sends_response_format(monkeypatch):
+    """response_format 非 None 时，body 里应带 response_format 字段。"""
+    sent = {}
+
+    def fake_urlopen(req, timeout=None):
+        sent["body"] = json.loads(req.data.decode())
+        class R:
+            def read(self): return b'{"choices":[{"message":{"content":"{\\"ok\\":true}","tool_calls":[]}}]}'
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+        return R()
+    monkeypatch.setattr("agent.protocol.urllib.request.urlopen", fake_urlopen)
+    cfg = {"base_url": "http://x/v1", "api_key": "k", "model": "m"}
+    res = chat_with_tools(cfg, [{"role": "user", "content": "hi"}], tools=None,
+                          response_format={"type": "json_object"})
+    assert sent["body"]["response_format"] == {"type": "json_object"}
+    assert "ok" in res["content"]
+
+
+def test_detect_json_mode_caches_result(monkeypatch):
+    """JSON mode 探测结果按 base_url+model 缓存，只探一次。"""
+    from agent import protocol
+    protocol._reset_capability_cache()
+    # 恢复真实探测逻辑（conftest 默认 patch 成返回 False）
+    monkeypatch.setattr(protocol, "detect_json_mode", protocol._real_detect_json_mode)
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout=None):
+        calls["n"] += 1
+        class R:
+            def read(self): return b'{"choices":[{"message":{"content":"{\\"ok\\":true}","tool_calls":[]}}]}'
+            def __enter__(self): return self
+            def __exit__(self, *a): pass
+        return R()
+    monkeypatch.setattr("agent.protocol.urllib.request.urlopen", fake_urlopen)
+    cfg = {"base_url": "http://x/v1", "api_key": "k", "model": "m"}
+
+    assert protocol.detect_json_mode(cfg) is True
+    assert protocol.detect_json_mode(cfg) is True   # 缓存命中
+    assert calls["n"] == 1   # 只探了一次
+
+
+def test_detect_native_support_returns_false_on_error(monkeypatch):
+    """探测请求失败时，detect_native_support 返回 False（走指令式回退）。"""
+    from agent import protocol
+    protocol._reset_capability_cache()
+    # 恢复真实探测逻辑
+    monkeypatch.setattr(protocol, "detect_native_support", protocol._real_detect_native_support)
+
+    def fake_urlopen(req, timeout=None):
+        raise RuntimeError("404 tools not supported")
+    monkeypatch.setattr("agent.protocol.urllib.request.urlopen", fake_urlopen)
+    cfg = {"base_url": "http://x/v1", "api_key": "k", "model": "m"}
+
+    assert protocol.detect_native_support(cfg) is False

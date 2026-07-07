@@ -7,8 +7,9 @@ from typing import Any
 
 @dataclass
 class Session:
+    """单用户会话内存状态。职责：图谱快照缓存 + TTL。
+    历史对话持久化由 chat_store 负责，此处不再存 messages（避免职责重叠/误导）。"""
     uid: str
-    messages: list[dict] = field(default_factory=list)
     graph_snapshot: dict | None = None
     snapshots: dict = field(default_factory=dict)
     last_active: float = field(default_factory=time.time)

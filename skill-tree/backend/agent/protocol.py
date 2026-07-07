@@ -72,10 +72,77 @@ import urllib.request
 import urllib.error
 
 
+# ── 供应商能力探测（按 base_url+model 缓存，只探一次）──
+_CAPABILITY_CACHE: dict[str, bool] = {}
+
+
+def _cap_key(cfg: dict, capability: str) -> str:
+    """缓存键：base_url + model + 能力名。"""
+    return f"{cfg.get('base_url','')}|{cfg.get('model','')}|{capability}"
+
+
+def _probe_and_cache(cfg: dict, capability: str, probe_fn) -> bool:
+    """通用探测：probe_fn(cfg) -> bool。失败记 False，缓存，不再探。"""
+    key = _cap_key(cfg, capability)
+    if key in _CAPABILITY_CACHE:
+        return _CAPABILITY_CACHE[key]
+    try:
+        ok = bool(probe_fn(cfg))
+    except Exception:
+        ok = False
+    _CAPABILITY_CACHE[key] = ok
+    return ok
+
+
+def _reset_capability_cache() -> None:
+    """测试用：清空能力缓存。"""
+    _CAPABILITY_CACHE.clear()
+
+
+def detect_native_support(cfg: dict) -> bool:
+    """探测供应商是否支持原生 function calling（tools 字段 + tool_calls 响应）。
+    发一个诱导性请求（带 tools + 让模型调 get_progress），看是否返回 tool_calls。
+    失败/不支持 → False（走指令式 ReAct 回退）。"""
+    def probe(c):
+        from agent.tools import TOOLS_EXECUTOR
+        # 只用最小工具集探测，节省 token
+        probe_tools = [TOOLS_EXECUTOR[0]]  # get_progress
+        msg = chat_with_tools(
+            c,
+            [{"role": "user", "content": "请调用 get_progress 工具查询进度。"}],
+            tools=probe_tools,
+        )
+        return bool(normalize_tool_calls(msg.get("tool_calls") or []))
+    return _probe_and_cache(cfg, "native_tools", probe)
+
+
+def detect_json_mode(cfg: dict) -> bool:
+    """探测供应商是否支持 response_format: {type: json_object}。
+    发一个带 JSON mode 的最简请求，能返回即支持。"""
+    def probe(c):
+        res = chat_with_tools(
+            c,
+            [{"role": "system", "content": "输出 JSON。"},
+             {"role": "user", "content": '输出 {"ok": true}'}],
+            tools=None,
+            response_format={"type": "json_object"},
+        )
+        # 能正常返回内容（不报错）即视为支持
+        return bool(res.get("content"))
+    return _probe_and_cache(cfg, "json_mode", probe)
+
+
+# 保留原始实现引用，供测试在 conftest patch 后恢复真实探测逻辑
+_real_detect_json_mode = detect_json_mode
+_real_detect_native_support = detect_native_support
+
+
 def chat_with_tools(cfg: dict, messages: list[dict], tools: list[dict] | None,
-                    temperature: float = 0.5) -> dict:
+                    temperature: float = 0.5,
+                    response_format: dict | None = None) -> dict:
     """带 tools 字段调 /chat/completions，返回 {content, tool_calls(原生结构)}。
-    供应商不支持 tools 抛错时由上层捕获走回退。"""
+    供应商不支持 tools 抛错时由上层捕获走回退。
+    response_format 非 None 时加 response_format 字段（供应商不支持会报错，由上层捕获）。"""
     base = cfg["base_url"].rstrip("/")
     url = f"{base}/chat/completions"
     body: dict[str, Any] = {
@@ -85,6 +152,8 @@ def chat_with_tools(cfg: dict, messages: list[dict], tools: list[dict] | None,
     }
     if tools:
         body["tools"] = to_tool_schemas(tools)
+    if response_format:
+        body["response_format"] = response_format
     req = urllib.request.Request(url, data=json.dumps(body).encode("utf-8"), method="POST")
     req.add_header("Content-Type", "application/json")
     req.add_header("Authorization", f"Bearer {cfg['api_key']}")

@@ -26,8 +26,9 @@ class FakeChat:
         self.calls: list[dict] = []  # 记录每次调用的 messages/tools
 
     def __call__(self, cfg: dict, messages: list[dict], tools: list[dict] | None = None,
-                 stream: bool = False) -> Any:
-        self.calls.append({"messages": messages, "tools": tools, "stream": stream})
+                 stream: bool = False, response_format: dict | None = None) -> Any:
+        self.calls.append({"messages": messages, "tools": tools, "stream": stream,
+                           "response_format": response_format})
         if not self.responses:
             return {"content": "", "tool_calls": []}
         resp = self.responses.pop(0) if len(self.responses) > 1 else self.responses[0]

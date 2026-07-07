@@ -92,3 +92,40 @@ def test_build_index_embeds_and_skips_unchanged(tmp_path: Path, monkeypatch):
     calls["n"] = 0
     build_index(cfg, proj, idx)
     assert calls["n"] >= 1  # 重新索引了
+
+
+# ─────────────── P1-#7: embedding 端点探测 ───────────────
+
+def test_build_index_raises_when_embedding_unsupported(tmp_path: Path, monkeypatch):
+    """供应商不支持 /embeddings 时，build_index 开头探测失败直接报错，不跑到一半才挂。"""
+    from rag import indexer
+    indexer._reset_embed_support_cache()
+    # embed 抛错 → 探测判为不支持
+    def failing_embed(cfg, texts):
+        raise RuntimeError("404 not found")
+    monkeypatch.setattr("rag.indexer.embed", failing_embed)
+
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    (proj / "a.py").write_text("def foo():\n    return 1\n", encoding="utf-8")
+    cfg = {"base_url": "x", "api_key": "y", "model": "m"}
+
+    import pytest
+    with pytest.raises(ValueError, match="不支持 embedding"):
+        build_index(cfg, proj, tmp_path / "idx")
+
+
+def test_detect_embedding_support_caches_result(tmp_path: Path, monkeypatch):
+    """探测结果按 base_url+model 缓存，只探一次。"""
+    from rag import indexer
+    indexer._reset_embed_support_cache()
+    calls = {"n": 0}
+    def fake_embed(cfg, texts):
+        calls["n"] += 1
+        return [[1.0, 2.0]]
+    monkeypatch.setattr("rag.indexer.embed", fake_embed)
+    cfg = {"base_url": "http://x/v1", "api_key": "y", "model": "m"}
+
+    assert indexer.detect_embedding_support(cfg) is True
+    assert indexer.detect_embedding_support(cfg) is True   # 缓存命中
+    assert calls["n"] == 1   # 只探了一次

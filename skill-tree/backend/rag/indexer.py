@@ -93,6 +93,30 @@ def embed(cfg: dict, texts: list[str]) -> list[list[float]]:
     return [d["embedding"] for d in items]
 
 
+# embedding 端点能力探测缓存（按 base_url+model 缓存，只探一次）
+_EMBED_SUPPORT_CACHE: dict[str, bool] = {}
+
+
+def detect_embedding_support(cfg: dict) -> bool:
+    """探测供应商是否支持 /embeddings 端点。发一个最简请求（单条短文本），成功返回向量即支持。
+    失败/不支持 → False。结果按 base_url+model 缓存。"""
+    key = f"{cfg.get('base_url','')}|{cfg.get('model','')}"
+    if key in _EMBED_SUPPORT_CACHE:
+        return _EMBED_SUPPORT_CACHE[key]
+    try:
+        vecs = embed(cfg, ["probe"])
+        ok = bool(vecs) and bool(vecs[0])
+    except Exception:
+        ok = False
+    _EMBED_SUPPORT_CACHE[key] = ok
+    return ok
+
+
+def _reset_embed_support_cache() -> None:
+    """测试用：清空 embedding 探测缓存。"""
+    _EMBED_SUPPORT_CACHE.clear()
+
+
 def _file_mtime(path: Path) -> float:
     return os.path.getmtime(path)
 
@@ -104,7 +128,13 @@ def _file_mtime_safe(chunk: dict) -> float:
 def build_index(cfg: dict, project_root: Path, index_dir: Path,
                 batch_size: int = 32) -> dict:
     """扫描 project_root 下所有 .py，AST chunking + embedding，增量写 JSONL。
-    返回 {chunks, files, built_at}。"""
+    返回 {chunks, files, built_at}。
+    开头探测 /embeddings 端点：不支持直接报错，避免跑到一半才挂。"""
+    if not detect_embedding_support(cfg):
+        raise ValueError(
+            "该供应商不支持 embedding（/embeddings 端点不可用）。"
+            "请在设置里配置支持 /embeddings 的供应商（如智谱/Qwen/OpenAI）。"
+        )
     chunks_path = index_dir / "code_chunks.jsonl"
     meta_path = index_dir / "code_meta.json"
     # 读旧索引做 mtime 对比（增量）
