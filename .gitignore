@@ -28,6 +28,14 @@ Thumbs.db
 resume/**
 !resume/.gitkeep
 
+# CLAUDE.md（AI 开发上下文文档，含本地路径/个人背景，不入公开仓库）
+# 本地保留，远程移除。
+CLAUDE.md
+**/CLAUDE.md
+
+# ZCode 本地配置/计划（工具产物，不入库）
+.zcode/
+
 # Resume build output (历史保留,已被上面规则覆盖)
 
 # Skill-tree generated artifacts (regenerate with: python skill-tree/tools/render.py)

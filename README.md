@@ -1,23 +1,39 @@
-# 🌳 实习技能树
+# 自适应学习 Agent
 
-一个**状态驱动**的实习备战系统：用可视化的技能树规划学习路径、追踪掌握进度、解锁成就；简历和开源项目是这棵树结出的**果实**。
+一个带**评估迭代闭环**的 AI Agent 系统：把学习路径规划、进度追踪、知识检索、文档产出串联成 Planner→Executor→Writer 三层架构，用 Reflexion 自校验保障可靠性，用 pytest + 黄金用例集把 Prompt 工程变成可测工程。
 
-> 📄 **[系统设计文档（飞书）](https://my.feishu.cn/docx/M6FGdMITtoZenZxS8X5cRjXXnIQ)** — 完整设计思路与技术路线（Agent 三层架构 / RAG 混合检索 / Reflexion 自校验 / 飞书文档产出闭环 / 面试讲法）。本地 spec 与实现计划见 `docs/`。
+> 📄 **[系统设计文档（飞书）](https://my.feishu.cn/docx/M6FGdMITtoZenZxS8X5cRjXXnIQ)** — Agent 三层架构 / RAG 混合检索 / Reflexion 自校验 / 飞书文档产出闭环 / 面试讲法。
 
-> Obsidian / Notion / 飞书是对**已有知识**的总结；技能树是对**未来学习路径**的规划，有明确的进度反馈。
+## ✨ 核心能力
 
-```
-   找一个实习方向 → AI 自动种一棵树 → 边学边点亮 → 结出简历果实
-              │
-   ┌──────────┼──────────┐
-   ▼          ▼          ▼
- 🎯推荐      🔍搜索      📢广告   🤖Agent    ← 方向(着色分支)
-   │     共享基础汇成根系            │
-   ▼                               ▼
- 📄 简历(PDF)                    📦 开源项目      ← 果实
-```
+- **分层 Agent**：Planner 意图分流 → Executor(ReAct) 工具循环 → Writer 文档产出，最大 6 步防发散
+- **RAG 混合检索**：源码 AST 切 chunk 建向量索引，向量 + 图谱 + 论文三路融合，带引用编号
+- **Reflexion 自校验**：ReAct 草稿后插入自校验发现遗漏续跑（封顶 1 轮防卡死），实测触发率约 54%
+- **工具协议适配**：混合协议（原生 function calling 优先、指令式 ReAct 回退），一套代码适配多家 OpenAI 兼容供应商
+- **飞书产出闭环**：Writer 多模板差异化产出 → 飞书文档 → 知识库归档，端到端可演示
+- **评估迭代闭环**：134 个 pytest 用例 + 黄金用例集构成回归网，消融/参数扫描/Top-k 与 MRR 指标
 
-## 技术栈
+## 📊 实测指标
+
+> 所有数字来自真实 LLM 调用（`minimax-m3` via 火山方舟），无虚构。详见 [`eval/RESULTS.md`](eval/RESULTS.md)，可复现。
+
+**Agent Loop（13 条黄金用例）**
+
+| 指标 | 实测值 |
+|------|--------|
+| Planner 意图分类准确率 | 13/13（chat/query/mutate/produce 四类全对）|
+| Reflexion 触发率 | 53.8%（query/produce 路径几乎全触发）|
+| 任务完成率 | 84.6%（11/13）|
+
+**RAG 召回（15 条查询集，源码 AST 索引）**
+
+| 指标 | 实测值 |
+|------|--------|
+| Top-5 召回命中率 | 93.3%（14/15）|
+| Top-1 召回命中率 | 66.7%（10/15）|
+| MRR | 0.80 |
+
+## 🏗️ 技术栈
 
 **React + FastAPI + docker-compose 全栈应用**
 
@@ -25,10 +41,12 @@
 |----|------|------|
 | 前端 | React 18 + TypeScript + Vite | 单页应用，玉青宝石工坊美学，DAG 知识图谱 |
 | 后端 | FastAPI (Python) | 多用户隔离 + AI 生成引擎，零三方依赖(ai/layout/progress 纯标准库) |
+| Agent | Planner→Executor→Writer | ReAct 循环 + Reflexion 自校验 + 混合协议适配 |
+| RAG | 向量 + 图谱 + 论文 | 源码 AST 切 chunk，BM25 + 余弦相似度三路融合 |
 | 数据 | JSON 文件 | 每用户独立 `data/users/<id>/`，无数据库 |
-| 部署 | docker-compose | 一键起 frontend(:5173) + backend(:8001) |
+| 部署 | docker-compose / Tauri | 一键起 frontend(:5173) + backend(:8001)，或打包桌面应用 |
 
-## 快速开始
+## 🚀 快速开始
 
 ### docker-compose（推荐）
 ```bash
@@ -51,7 +69,29 @@ npm run dev                # http://localhost:5173（代理 /api → :8000）
 
 首次进入：**新用户自动跳初始化**（建用户 → 配模型 → 贴 JD → AI 生成技能树）。已有用户从侧栏底部「⚙️设置」进入。
 
-## AI Agent（工具调用 + RAG + 飞书文档产出）
+**构建 RAG 知识库索引**（让 Agent 能检索你的开源项目源码；配好 LLM 后）：
+
+```bash
+curl -X POST http://localhost:8000/api/rag/build-index -H "X-User-Id: default"
+curl http://localhost:8000/api/rag/status -H "X-User-Id: default"   # 查索引状态
+```
+
+装 numpy 可加速向量检索（可选，不装也能跑，退化为纯标准库）：
+
+```bash
+pip install numpy
+```
+
+## 🔬 评估体系
+
+把 Prompt 工程变成可测工程——所有 Agent 行为都有对应的评估手段：
+
+- **Agent loop 评估**：13 条黄金用例覆盖 chat/query/mutate/produce 四类意图，跑通即回归
+- **RAG 召回评估**：15 条查询集 + Top-k 敏感性扫描 + 分数阈值实验
+- **复现**：`cd skill-tree/backend && python ../../eval/run_eval.py`，原始数据落 `eval/results/`
+- 完整结果见 [`eval/RESULTS.md`](eval/RESULTS.md)
+
+## AI Agent 详解
 
 右下角 ✦ 悬浮按钮打开 **AI 学习助手**——它不是单轮生成器，而是一个会调工具、能检索知识、可产文档的 Agent：
 
@@ -67,20 +107,7 @@ lark-cli auth login        # 按提示完成飞书授权
 lark-cli --version         # 确认已安装（≥1.0.60）
 ```
 
-**构建 RAG 知识库索引**（让 Agent 能检索你的开源项目源码；配好 LLM 后）：
-
-```bash
-curl -X POST http://localhost:8000/api/rag/build-index -H "X-User-Id: default"
-curl http://localhost:8000/api/rag/status -H "X-User-Id: default"   # 查索引状态
-```
-
-装 numpy 可加速向量检索（可选，不装也能跑，退化为纯标准库）：
-
-```bash
-pip install numpy
-```
-
-## 目录结构
+## 📂 目录结构
 
 ```
 ├── skill-tree/              ← 【主体】技能树全栈应用 + AI Agent
@@ -94,7 +121,8 @@ pip install numpy
 │   ├── profiles/              岗位 profile(推荐/搜索/广告/agent)
 │   ├── templates/             7 套 LaTeX 模板
 │   └── build/                 编译脚本 + PDF 输出
-├── docs/                    学习笔记
+├── eval/                    ← Agent + RAG 实测评估（黄金用例 / 召回 / 参数扫描）
+├── docs/                    学习笔记 + 设计 spec + 实现计划
 │
 ../projects/                 ← 【果实】搜广推开源项目(已移出本仓库到父目录，与 Resume 同级)
 ```
@@ -108,18 +136,6 @@ pip install numpy
 - **多用户隔离**：每用户独立数据目录，API Key 安全存储（gitignore 排除）
 - **成就系统**：铜/银/金三级，按掌握度/分支完成自动解锁
 - **侧栏 SPA**：技能树 / 个人信息 / 简历模板 / 果实展示 四板块 + 底部设置
-
-## 编译简历
-
-> resume/ 目录含个人信息,已 gitignore,不在公开仓库中。本地使用:
-
-```cmd
-cd resume\build
-build_profile.cmd                    :: 编译所有 profile → build\<profile>.pdf
-build_profile.cmd recommendation     :: 只编译推荐算法岗
-```
-
-详见本地 `resume/CLAUDE.md`。
 
 ## 设计原则
 
