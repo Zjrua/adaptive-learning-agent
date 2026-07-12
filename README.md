@@ -2,7 +2,7 @@
 
 一个带**评估迭代闭环**的 AI Agent 系统：把学习路径规划、进度追踪、知识检索、文档产出串联成 Planner→Executor→Writer 三层架构，用 Reflexion 自校验保障可靠性，用 pytest + 黄金用例集把 Prompt 工程变成可测工程。
 
-> 📄 **[系统设计文档（飞书）](https://my.feishu.cn/docx/M6FGdMITtoZenZxS8X5cRjXXnIQ)** — Agent 三层架构 / RAG 混合检索 / Reflexion 自校验 / 飞书文档产出闭环 / 面试讲法。
+> 📄 **[系统设计文档（飞书）](https://my.feishu.cn/docx/M6FGdMITtoZenZxS8X5cRjXXnIQ)** — Agent 三层架构 / RAG 混合检索 / Reflexion 自校验 / 飞书文档产出闭环 / 评估方法论。
 
 ## ✨ 核心能力
 
