@@ -15,7 +15,7 @@
 
 ## 📊 实测指标
 
-> 所有数字来自真实 LLM 调用（`minimax-m3` via 火山方舟），无虚构。详见 [`eval/RESULTS.md`](eval/RESULTS.md)，可复现。
+> 实测数据详见 [`eval/RESULTS.md`](eval/RESULTS.md)，可复现。
 
 **Agent Loop（13 条黄金用例）**
 

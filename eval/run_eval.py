@@ -16,7 +16,7 @@ eval/run_eval.py — Agent 实测脚本:跑黄金用例,统计量化指标。
 读取配置:eval/config.local.json(已 gitignore)。
 结果输出:eval/results/eval_<timestamp>.json + 控制台汇总。
 
-数据口径:所有数字来自真实 LLM 调用,无虚构。config.local.json 含 api_key 不入库。
+数据口径:所有数字来自真实 LLM 调用。config.local.json 含 api_key 不入库。
 """
 from __future__ import annotations
 import json
